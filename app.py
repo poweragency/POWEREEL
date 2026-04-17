@@ -35,9 +35,40 @@ elif (PROJECT_ROOT / ".env").exists():
 # Streamlit Cloud: load secrets into environment variables
 if hasattr(st, "secrets"):
     for key in ["HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
-                 "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID"]:
+                 "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+                 "APP_PASSWORD"]:
         if key in st.secrets:
             os.environ[key] = st.secrets[key]
+
+# ── Authentication ───────────────────────────────────────────────────────────
+
+def check_password() -> bool:
+    """Block access unless the correct password is entered."""
+    app_password = os.getenv("APP_PASSWORD", "")
+
+    # No password set = no protection (local dev)
+    if not app_password:
+        return True
+
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    if st.session_state.authenticated:
+        return True
+
+    st.title("⚡ POWEREEL")
+    st.markdown("### Accesso riservato")
+    password = st.text_input("Password", type="password")
+    if st.button("Accedi", type="primary"):
+        if password == app_password:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("❌ Password errata")
+    return False
+
+if not check_password():
+    st.stop()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
