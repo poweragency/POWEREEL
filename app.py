@@ -26,11 +26,18 @@ PROJECT_ROOT = Path(__file__).parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 ENV_PATH = PROJECT_ROOT / "config" / ".env"
 
-# Load env
+# Load env — support both local .env and Streamlit Cloud secrets
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH)
 elif (PROJECT_ROOT / ".env").exists():
     load_dotenv(PROJECT_ROOT / ".env")
+
+# Streamlit Cloud: load secrets into environment variables
+if hasattr(st, "secrets"):
+    for key in ["HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
+                 "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID"]:
+        if key in st.secrets:
+            os.environ[key] = st.secrets[key]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
