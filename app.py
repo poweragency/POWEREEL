@@ -80,13 +80,13 @@ def save_settings(settings: dict) -> None:
 
 
 @st.cache_data(ttl=300)
-def get_heygen_avatars() -> list[dict]:
-    """Get only user's custom avatars (not stock)."""
+def get_heygen_data() -> dict:
+    """Get all avatar groups and their looks in one cached call."""
     api_key = os.getenv("HEYGEN_API_KEY", "")
     if not api_key:
-        return []
+        return {"groups": [], "looks": {}}
     try:
-        # Use avatar_group.list — only returns user's own avatars
+        # Get avatar groups (user's own avatars)
         r = httpx.get(
             "https://api.heygen.com/v2/avatar_group.list",
             headers={"X-Api-Key": api_key},
@@ -94,56 +94,30 @@ def get_heygen_avatars() -> list[dict]:
         )
         groups = r.json().get("data", {}).get("avatar_group_list", [])
 
-        # Also get avatars for the IDs and preview images
-        r2 = httpx.get(
-            "https://api.heygen.com/v2/avatars",
-            headers={"X-Api-Key": api_key},
-            timeout=15,
-        )
-        all_avatars = r2.json().get("data", {}).get("avatars", [])
-
-        # Match groups to avatar data
-        result = []
-        seen = set()
+        # Get looks for each group
+        looks = {}
         for g in groups:
-            name = g["name"]
-            if name in seen:
-                continue
-            seen.add(name)
-            # Find matching avatar for preview image
-            preview = g.get("preview_image", "")
-            avatar_id = ""
-            for a in all_avatars:
-                if a["avatar_name"] == name:
-                    avatar_id = a["avatar_id"]
-                    preview = a.get("preview_image_url", preview)
-                    break
-            if avatar_id:
-                result.append({
-                    "avatar_id": avatar_id,
-                    "avatar_name": name,
-                    "preview_image": preview,
-                    "num_looks": g.get("num_looks", 1),
-                })
-        return result
-    except Exception:
-        return []
+            gid = g["id"]
+            r2 = httpx.get(
+                f"https://api.heygen.com/v2/avatar_group/{gid}/avatars",
+                headers={"X-Api-Key": api_key},
+                timeout=15,
+            )
+            if r2.status_code == 200:
+                avatar_list = r2.json().get("data", {}).get("avatar_list", [])
+                looks[g["name"]] = [
+                    {
+                        "look_id": a.get("id", a.get("avatar_id", "")),
+                        "name": a.get("name", "Default"),
+                        "image_url": a.get("image_url", ""),
+                    }
+                    for a in avatar_list
+                    if a.get("id") or a.get("avatar_id")
+                ]
 
-
-@st.cache_data(ttl=300)
-def get_heygen_avatar_groups() -> list[dict]:
-    api_key = os.getenv("HEYGEN_API_KEY", "")
-    if not api_key:
-        return []
-    try:
-        r = httpx.get(
-            "https://api.heygen.com/v2/avatar_group.list",
-            headers={"X-Api-Key": api_key},
-            timeout=15,
-        )
-        return r.json().get("data", {}).get("avatar_group_list", [])
+        return {"groups": groups, "looks": looks}
     except Exception:
-        return []
+        return {"groups": [], "looks": {}}
 
 
 @st.cache_data(ttl=300)
@@ -203,39 +177,68 @@ page = st.sidebar.radio(
 if page == "🎭 Avatar & Voce":
     st.title("🎭 Avatar & Voce")
 
-    # ── Avatar ──
-    st.subheader("Seleziona Avatar")
-    avatars = get_heygen_avatars()
+    heygen_data = get_heygen_data()
+    groups = heygen_data["groups"]
+    all_looks = heygen_data["looks"]
     current_avatar = settings["heygen"]["avatar_id"]
 
-    if avatars:
-        cols = st.columns(len(avatars))
-        for i, avatar in enumerate(avatars):
-            with cols[i]:
-                is_selected = avatar["avatar_id"] == current_avatar
-                border = "3px solid #E8163C" if is_selected else "1px solid #444"
-                badge = "✅ ATTIVO" if is_selected else ""
+    # ── Step 1: Scegli Avatar ──
+    st.subheader("1. Scegli Avatar")
 
-                st.markdown(
-                    f'<div style="border:{border}; border-radius:12px; padding:8px; text-align:center;">'
-                    f'<img src="{avatar["preview_image"]}" style="width:100%; border-radius:8px; max-height:200px; object-fit:cover;">'
-                    f'<p style="margin:6px 0 2px; font-weight:bold; font-size:16px;">{avatar["avatar_name"]}</p>'
-                    f'<p style="margin:0; color:#E8163C; font-size:12px;">{badge}</p>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-                if not is_selected:
-                    if st.button("Seleziona", key=f"av_{avatar['avatar_id']}", use_container_width=True):
-                        settings["heygen"]["avatar_id"] = avatar["avatar_id"]
+    if groups:
+        avatar_names = [g["name"] for g in groups]
+
+        # Find which avatar is currently selected
+        current_group = avatar_names[0]
+        for gname, looks in all_looks.items():
+            for look in looks:
+                if look["look_id"] == current_avatar:
+                    current_group = gname
+                    break
+
+        selected_group = st.radio(
+            "I tuoi avatar",
+            avatar_names,
+            index=avatar_names.index(current_group) if current_group in avatar_names else 0,
+            horizontal=True,
+        )
+
+        # ── Step 2: Scegli Look ──
+        st.subheader("2. Scegli Look")
+        looks = all_looks.get(selected_group, [])
+
+        if looks:
+            cols = st.columns(min(len(looks), 4))
+            for i, look in enumerate(looks):
+                with cols[i % 4]:
+                    is_selected = look["look_id"] == current_avatar
+                    border = "3px solid #E8163C" if is_selected else "1px solid #444"
+
+                    st.markdown(
+                        f'<div style="border:{border}; border-radius:10px; padding:6px; text-align:center;">'
+                        f'<img src="{look["image_url"]}" style="width:100%; border-radius:8px; max-height:180px; object-fit:cover;">'
+                        f'<p style="margin:4px 0; font-size:12px;">{look["name"]}</p>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if st.button(
+                        "✅ Attivo" if is_selected else "Usa",
+                        key=f"look_{look['look_id']}",
+                        use_container_width=True,
+                        disabled=is_selected,
+                    ):
+                        settings["heygen"]["avatar_id"] = look["look_id"]
                         save_settings(settings)
                         st.rerun()
+        else:
+            st.info("Nessun look trovato per questo avatar.")
     else:
         st.warning("Impossibile caricare gli avatar. Verifica la API key di HeyGen.")
 
     st.divider()
 
     # ── Voce ──
-    st.subheader("Seleziona Voce")
+    st.subheader("3. Scegli Voce")
     voices = get_heygen_voices()
     current_voice = settings["heygen"]["voice_id"]
 
@@ -258,7 +261,7 @@ if page == "🎭 Avatar & Voce":
     st.divider()
 
     # ── Background ──
-    st.subheader("Sfondo Video")
+    st.subheader("4. Sfondo Video")
 
     bg_type = st.selectbox(
         "Tipo di sfondo",
@@ -278,7 +281,7 @@ if page == "🎭 Avatar & Voce":
             label, settings["heygen"].get("background_value", "")
         )
 
-    st.caption("Formato video: 1080x1920 (9:16 verticale, formato Reel)")
+    st.caption("Formato: 1080x1920 (9:16 verticale, Reel)")
 
     if st.button("💾 Salva", type="primary", key="save_avatar"):
         save_settings(settings)
