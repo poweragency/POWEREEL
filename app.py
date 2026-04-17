@@ -2,10 +2,7 @@
 
 import json
 import os
-import subprocess
-import sys
-import threading
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 import httpx
@@ -203,104 +200,12 @@ st.sidebar.divider()
 
 page = st.sidebar.radio(
     "Sezione",
-    ["🎬 Genera Reel", "🎭 Avatar & Voce", "📰 Fonti Notizie", "✍️ Script & Tono", "🎨 Stile Sottotitoli", "📱 Instagram", "📜 Storico"],
+    ["🎭 Avatar & Voce", "📰 Fonti Notizie", "✍️ Script & Tono", "🎨 Stile Sottotitoli", "📱 Instagram"],
 )
 
 # ── Pages ────────────────────────────────────────────────────────────────────
 
-if page == "🎬 Genera Reel":
-    st.title("🎬 Genera Reel")
-    st.markdown("Lancia la pipeline per creare e pubblicare un nuovo reel.")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("Impostazioni Run")
-        dry_run = st.toggle("Dry Run (non pubblicare)", value=settings["pipeline"]["dry_run"])
-        run_date = st.date_input("Data", value=date.today())
-
-    with col2:
-        st.subheader("Riepilogo Config")
-        st.write(f"**Avatar:** {settings['heygen']['avatar_id'][:12]}...")
-        st.write(f"**Durata target:** {settings['scriptwriter']['target_duration_seconds']}s")
-        st.write(f"**Feed attivi:** {len(settings['scraper']['feeds'])}")
-        st.write(f"**Scheduler:** {settings['pipeline']['schedule_cron']}")
-
-    st.divider()
-
-    col_a, col_b, col_c = st.columns(3)
-
-    with col_a:
-        if st.button("▶️ Genera Reel", type="primary", use_container_width=True):
-            with st.spinner("Pipeline in corso... (2-5 minuti)"):
-                try:
-                    cmd = [sys.executable, "-c",
-                           f"from src.pipeline import run_pipeline; "
-                           f"run_pipeline(dry_run={dry_run}, "
-                           f"run_date=__import__('datetime').date.fromisoformat('{run_date.isoformat()}'))"]
-                    result = subprocess.run(
-                        cmd, capture_output=True, text=True, timeout=600,
-                        cwd=str(PROJECT_ROOT),
-                    )
-                    if result.returncode == 0:
-                        st.success("✅ Reel generato con successo!")
-                        final = PROJECT_ROOT / "output" / run_date.isoformat() / "final.mp4"
-                        if final.exists():
-                            st.video(str(final))
-                    else:
-                        st.error("❌ Pipeline fallita")
-                        st.code(result.stderr[-2000:] if result.stderr else "Nessun output")
-                except subprocess.TimeoutExpired:
-                    st.error("⏱️ Timeout — la pipeline ha impiegato troppo tempo")
-
-    with col_b:
-        if st.button("📋 Solo Scraping + Script", use_container_width=True):
-            with st.spinner("Scraping e generazione script..."):
-                try:
-                    cmd = [sys.executable, "-c",
-                           f"""
-from src.config_loader import load_config
-from src.scraper import scrape_news, save_articles
-from src.scriptwriter import generate_script, save_script
-from pathlib import Path
-from datetime import date
-config = load_config(check_ffmpeg=False)
-run_dir = Path('output') / '{run_date.isoformat()}'
-run_dir.mkdir(parents=True, exist_ok=True)
-articles = scrape_news(config.scraper)
-save_articles(articles, run_dir)
-script = generate_script(articles, config.scriptwriter, config.anthropic_api_key)
-save_script(script, run_dir)
-print(script)
-"""]
-                    result = subprocess.run(
-                        cmd, capture_output=True, text=True, timeout=120,
-                        cwd=str(PROJECT_ROOT),
-                    )
-                    if result.returncode == 0:
-                        st.success("✅ Script generato!")
-                        st.text_area("Script", result.stdout, height=200)
-                    else:
-                        st.error("❌ Errore")
-                        st.code(result.stderr[-1000:])
-                except subprocess.TimeoutExpired:
-                    st.error("⏱️ Timeout")
-
-    with col_c:
-        # Show latest video if exists
-        latest_final = PROJECT_ROOT / "output" / date.today().isoformat() / "final.mp4"
-        if latest_final.exists():
-            if st.button("👁️ Vedi ultimo video", use_container_width=True):
-                st.video(str(latest_final))
-
-    # Show latest script
-    latest_script = PROJECT_ROOT / "output" / date.today().isoformat() / "script.txt"
-    if latest_script.exists():
-        with st.expander("📝 Script di oggi"):
-            st.text(latest_script.read_text(encoding="utf-8"))
-
-
-elif page == "🎭 Avatar & Voce":
+if page == "🎭 Avatar & Voce":
     st.title("🎭 Avatar & Voce")
 
     # ── My Avatars ──
@@ -633,29 +538,3 @@ elif page == "📱 Instagram":
         st.success("✅ Salvato!")
 
 
-elif page == "📜 Storico":
-    st.title("📜 Storico Run")
-
-    runs = get_past_runs()
-
-    if not runs:
-        st.info("Nessuna run ancora. Genera il tuo primo reel!")
-    else:
-        for run in runs:
-            status_icon = "✅" if run["status"] == "success" else "❌" if run["status"] == "error" else "❓"
-            mode = "🧪 Dry Run" if run["dry_run"] else "📤 Pubblicato"
-
-            with st.expander(f"{status_icon} {run['date']} — {mode}"):
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    if run["has_script"]:
-                        script = (run["path"] / "script.txt").read_text(encoding="utf-8")
-                        st.text_area("Script", script, height=150, key=f"script_{run['date']}")
-
-                with col2:
-                    if run["has_final"]:
-                        st.video(str(run["path"] / "final.mp4"))
-
-                if run["publish_id"]:
-                    st.write(f"📱 Instagram Media ID: `{run['publish_id']}`")
