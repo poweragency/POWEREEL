@@ -41,7 +41,7 @@ scriptwriter:
     - Circa {word_count} parole totali
 
 heygen:
-  avatar_id: "2aabaf0a881e41ad83d10eeaaedaf603"    # vik2
+  avatar_id: "12e2f2b417424069978fb86429c5f9c9"    # vik2 - Bearded podcaster with black glasses
   voice_id: "2fa3feadb7884b849657f78df86a5057"     # VERYRA
   video_width: 1080
   video_height: 1920               # 9:16 verticale (formato Reel)

@@ -212,6 +212,70 @@ def _add_lower_third(
     return clip
 
 
+def _auto_zoom_vertical(clip: VideoFileClip) -> VideoFileClip:
+    """Detect black bars and crop/zoom to fill the full 9:16 frame."""
+    frame = clip.get_frame(min(3, clip.duration / 2))
+    h, w = frame.shape[:2]
+
+    # Find content boundaries (non-black rows)
+    row_brightness = np.mean(frame, axis=(1, 2))
+    threshold = 15
+
+    top = 0
+    for y in range(h):
+        if row_brightness[y] > threshold:
+            top = y
+            break
+
+    bottom = h - 1
+    for y in range(h - 1, 0, -1):
+        if row_brightness[y] > threshold:
+            bottom = y
+            break
+
+    content_height = bottom - top
+    content_ratio = content_height / h
+
+    # Only crop if significant black bars (content < 80% of frame)
+    if content_ratio >= 0.80:
+        logger.info("Video gia' verticale pieno, nessun crop necessario")
+        return clip
+
+    logger.info(
+        "Black bars rilevate: content y=%d-%d (%.0f%% del frame). Auto-zoom...",
+        top, bottom, content_ratio * 100,
+    )
+
+    # Crop to content area
+    cropped = clip.cropped(y1=top, y2=bottom)
+
+    # Resize to fill the full 9:16 frame (1080x1920)
+    target_w, target_h = 1080, 1920
+    cropped_w, cropped_h = cropped.size
+
+    # Scale to fill width, then crop height if needed
+    scale = target_w / cropped_w
+    new_h = int(cropped_h * scale)
+
+    resized = cropped.resized(width=target_w)
+
+    if new_h < target_h:
+        # Content is wider than 9:16 — scale up more to fill height
+        scale2 = target_h / new_h
+        resized = resized.resized(lambda t: scale2)
+        # Center crop to 1080x1920
+        final_w = int(target_w * scale2)
+        x_offset = (final_w - target_w) // 2
+        resized = resized.cropped(x1=x_offset, x2=x_offset + target_w, y1=0, y2=target_h)
+    elif new_h > target_h:
+        # Crop height to fit
+        y_offset = (new_h - target_h) // 2
+        resized = resized.cropped(x1=0, x2=target_w, y1=y_offset, y2=y_offset + target_h)
+
+    logger.info("Auto-zoom completato: %dx%d", resized.size[0], resized.size[1])
+    return resized
+
+
 def edit_video(
     avatar_video_path: Path,
     script: str,
@@ -225,6 +289,9 @@ def edit_video(
         "Video base caricato: %.1fs, %dx%d",
         base.duration, base.size[0], base.size[1],
     )
+
+    # Auto-zoom: remove black bars and fill 9:16
+    base = _auto_zoom_vertical(base)
 
     subtitle_clips = _create_subtitle_clips(
         script, base.duration, tuple(base.size), config
