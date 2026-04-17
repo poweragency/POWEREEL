@@ -377,26 +377,65 @@ elif page == "✍️ Script & Tono":
 elif page == "🎨 Stile Sottotitoli":
     st.title("🎨 Stile Sottotitoli")
 
-    # ── Subtitle source ──
-    st.subheader("Sorgente Sottotitoli")
-    source_options = {
-        "heygen": "HeyGen (integrati nel video, stile HeyGen)",
-        "custom": "Custom (stile nicktrading_, aggiunti dal nostro editor)",
-    }
+    # ── Subtitle source with previews ──
+    st.subheader("Scegli Stile Sottotitoli")
+
     current_source = settings["heygen"].get("subtitle_source", "custom")
-    selected_source = st.radio(
-        "Da dove arrivano i sottotitoli?",
-        list(source_options.keys()),
-        index=list(source_options.keys()).index(current_source),
-        format_func=lambda x: source_options[x],
-    )
-    settings["heygen"]["subtitle_source"] = selected_source
-    settings["heygen"]["caption"] = selected_source == "heygen"
+
+    col_h, col_c = st.columns(2)
+
+    with col_h:
+        is_heygen = current_source == "heygen"
+        border_h = "3px solid #E8163C" if is_heygen else "1px solid #444"
+        st.markdown(
+            f'<div style="border:{border_h}; border-radius:12px; padding:10px; text-align:center;">'
+            f'<h4>HeyGen</h4>'
+            f'<p style="font-size:13px; color:#aaa;">Sottotitoli integrati da HeyGen, bianchi in basso, stile pulito</p>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        heygen_preview = PROJECT_ROOT / "assets" / "templates" / "heygen_caption_preview.png"
+        if heygen_preview.exists():
+            st.image(str(heygen_preview), use_container_width=True)
+        if st.button(
+            "✅ Attivo" if is_heygen else "Seleziona",
+            key="src_heygen",
+            use_container_width=True,
+            disabled=is_heygen,
+        ):
+            settings["heygen"]["subtitle_source"] = "heygen"
+            settings["heygen"]["caption"] = True
+            save_settings(settings)
+            st.rerun()
+
+    with col_c:
+        is_custom = current_source == "custom"
+        border_c = "3px solid #E8163C" if is_custom else "1px solid #444"
+        st.markdown(
+            f'<div style="border:{border_c}; border-radius:12px; padding:10px; text-align:center;">'
+            f'<h4>Custom (nicktrading_)</h4>'
+            f'<p style="font-size:13px; color:#aaa;">Box rosso sulla parola chiave, font grande, personalizzabile</p>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        custom_preview = PROJECT_ROOT / "assets" / "templates" / "custom_caption_preview.png"
+        if custom_preview.exists():
+            st.image(str(custom_preview), use_container_width=True)
+        if st.button(
+            "✅ Attivo" if is_custom else "Seleziona",
+            key="src_custom",
+            use_container_width=True,
+            disabled=is_custom,
+        ):
+            settings["heygen"]["subtitle_source"] = "custom"
+            settings["heygen"]["caption"] = False
+            save_settings(settings)
+            st.rerun()
 
     st.divider()
 
     # ── Custom style settings (only if custom) ──
-    if selected_source == "custom":
+    if current_source == "custom":
         st.subheader("Personalizza Stile Custom")
         sub = settings["editor"]["subtitle"]
 
@@ -422,7 +461,7 @@ elif page == "🎨 Stile Sottotitoli":
 
         settings["editor"]["subtitle"] = sub
     else:
-        st.info("I sottotitoli verranno generati da HeyGen direttamente nel video. Nessuna personalizzazione necessaria.")
+        st.success("Sottotitoli HeyGen attivi — verranno generati automaticamente nel video.")
 
     st.divider()
 
