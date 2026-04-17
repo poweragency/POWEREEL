@@ -53,7 +53,7 @@ def save_settings(settings: dict) -> None:
         yaml.dump(settings, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
-def get_heygen_avatars() -> list[dict]:
+def get_heygen_avatars(include_stock: bool = False) -> list[dict]:
     api_key = os.getenv("HEYGEN_API_KEY", "")
     if not api_key:
         return []
@@ -64,15 +64,35 @@ def get_heygen_avatars() -> list[dict]:
             timeout=15,
         )
         data = r.json().get("data", {}).get("avatars", [])
-        # Filter only custom avatars (not stock)
         seen = set()
-        custom = []
+        result = []
         for a in data:
             aid = a["avatar_id"]
-            if aid not in seen and a.get("type") is None and not a.get("avatar_name", "").endswith(")"):
-                seen.add(aid)
-                custom.append(a)
-        return custom
+            if aid in seen:
+                continue
+            seen.add(aid)
+            # Custom avatars have type=None, stock have type set
+            is_custom = a.get("type") is None
+            if is_custom or include_stock:
+                a["is_custom"] = is_custom
+                result.append(a)
+        return result
+    except Exception:
+        return []
+
+
+def get_heygen_avatar_groups() -> list[dict]:
+    """Get avatar groups with looks info."""
+    api_key = os.getenv("HEYGEN_API_KEY", "")
+    if not api_key:
+        return []
+    try:
+        r = httpx.get(
+            "https://api.heygen.com/v2/avatar_group.list",
+            headers={"X-Api-Key": api_key},
+            timeout=15,
+        )
+        return r.json().get("data", {}).get("avatar_group_list", [])
     except Exception:
         return []
 
@@ -252,46 +272,92 @@ print(script)
 elif page == "🎭 Avatar & Voce":
     st.title("🎭 Avatar & Voce")
 
-    # Avatars
-    st.subheader("Seleziona Avatar")
-    avatars = get_heygen_avatars()
+    # ── My Avatars ──
+    st.subheader("I Miei Avatar")
+    show_stock = st.toggle("Mostra anche avatar stock HeyGen", False)
+    avatars = get_heygen_avatars(include_stock=show_stock)
+    groups = get_heygen_avatar_groups()
 
     if avatars:
         current_avatar = settings["heygen"]["avatar_id"]
-        avatar_names = [f"{a['avatar_name']} ({a['avatar_id'][:8]}...)" for a in avatars]
-        current_idx = 0
-        for i, a in enumerate(avatars):
-            if a["avatar_id"] == current_avatar:
-                current_idx = i
-                break
 
-        cols = st.columns(min(len(avatars), 4))
-        for i, avatar in enumerate(avatars):
-            with cols[i % len(cols)]:
-                is_selected = avatar["avatar_id"] == current_avatar
-                border = "3px solid #E8163C" if is_selected else "1px solid #333"
-                st.markdown(
-                    f'<div style="border:{border}; border-radius:10px; padding:8px; text-align:center;">'
-                    f'<img src="{avatar["preview_image_url"]}" style="width:100%; border-radius:8px;">'
-                    f'<p style="margin:5px 0; font-weight:bold;">{avatar["avatar_name"]}</p>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-                if st.button(
-                    "✅ Selezionato" if is_selected else "Seleziona",
-                    key=f"avatar_{avatar['avatar_id']}",
-                    use_container_width=True,
-                    disabled=is_selected,
-                ):
-                    settings["heygen"]["avatar_id"] = avatar["avatar_id"]
-                    save_settings(settings)
-                    st.rerun()
+        # Separate custom and stock
+        custom_avatars = [a for a in avatars if a.get("is_custom")]
+        stock_avatars = [a for a in avatars if not a.get("is_custom")]
+
+        # Show custom avatars
+        if custom_avatars:
+            cols = st.columns(min(len(custom_avatars), 3))
+            for i, avatar in enumerate(custom_avatars):
+                with cols[i % len(cols)]:
+                    is_selected = avatar["avatar_id"] == current_avatar
+                    border = "3px solid #E8163C" if is_selected else "1px solid #444"
+
+                    # Find looks count for this avatar
+                    looks = 0
+                    for g in groups:
+                        if g["name"] == avatar["avatar_name"]:
+                            looks = g.get("num_looks", 0)
+                            break
+
+                    st.markdown(
+                        f'<div style="border:{border}; border-radius:12px; padding:10px; text-align:center; background:#1a1a2e;">'
+                        f'<img src="{avatar["preview_image_url"]}" style="width:100%; border-radius:8px; aspect-ratio:9/16; object-fit:cover;">'
+                        f'<h4 style="margin:8px 0 2px;">{avatar["avatar_name"]}</h4>'
+                        f'<p style="margin:0; color:#888; font-size:12px;">{looks} look{"s" if looks != 1 else ""} disponibil{"i" if looks != 1 else "e"}</p>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    # Preview video
+                    if avatar.get("preview_video_url"):
+                        with st.expander("🎥 Preview video"):
+                            st.video(avatar["preview_video_url"])
+
+                    if st.button(
+                        "✅ Selezionato" if is_selected else "Seleziona",
+                        key=f"avatar_{avatar['avatar_id']}",
+                        use_container_width=True,
+                        disabled=is_selected,
+                        type="primary" if is_selected else "secondary",
+                    ):
+                        settings["heygen"]["avatar_id"] = avatar["avatar_id"]
+                        save_settings(settings)
+                        st.rerun()
+
+        # Show stock avatars if enabled
+        if stock_avatars and show_stock:
+            st.divider()
+            st.subheader("Avatar Stock HeyGen")
+            st.caption("Avatar professionali pronti all'uso")
+            cols = st.columns(4)
+            for i, avatar in enumerate(stock_avatars[:12]):  # Show max 12
+                with cols[i % 4]:
+                    is_selected = avatar["avatar_id"] == current_avatar
+                    border = "3px solid #E8163C" if is_selected else "1px solid #333"
+                    st.markdown(
+                        f'<div style="border:{border}; border-radius:10px; padding:6px; text-align:center;">'
+                        f'<img src="{avatar["preview_image_url"]}" style="width:100%; border-radius:6px;">'
+                        f'<p style="margin:4px 0; font-size:12px;">{avatar["avatar_name"]}</p>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if st.button(
+                        "✅" if is_selected else "Usa",
+                        key=f"avatar_stock_{avatar['avatar_id']}",
+                        use_container_width=True,
+                        disabled=is_selected,
+                    ):
+                        settings["heygen"]["avatar_id"] = avatar["avatar_id"]
+                        save_settings(settings)
+                        st.rerun()
+
     else:
         st.warning("Impossibile caricare gli avatar. Verifica la API key di HeyGen.")
 
     st.divider()
 
-    # Voices
+    # ── Voices ──
     st.subheader("Seleziona Voce")
     voices = get_heygen_voices()
 
@@ -301,8 +367,8 @@ elif page == "🎭 Avatar & Voce":
             is_selected = voice["voice_id"] == current_voice
             col1, col2, col3 = st.columns([3, 2, 1])
             with col1:
-                label = f"{'✅ ' if is_selected else ''}{voice['name']} ({voice['language']})"
-                st.write(label)
+                icon = "✅" if is_selected else "🎙️"
+                st.write(f"{icon} **{voice['name']}** ({voice['language']})")
             with col2:
                 if voice.get("preview_audio"):
                     st.audio(voice["preview_audio"])
@@ -312,6 +378,27 @@ elif page == "🎭 Avatar & Voce":
                         settings["heygen"]["voice_id"] = voice["voice_id"]
                         save_settings(settings)
                         st.rerun()
+                else:
+                    st.write("✅ Attiva")
+
+    else:
+        st.warning("Nessuna voce custom trovata.")
+
+    st.divider()
+
+    # ── Video settings ──
+    st.subheader("Impostazioni Video")
+    col1, col2 = st.columns(2)
+    with col1:
+        settings["heygen"]["video_width"] = st.number_input("Larghezza", value=settings["heygen"]["video_width"], key="vw")
+    with col2:
+        settings["heygen"]["video_height"] = st.number_input("Altezza", value=settings["heygen"]["video_height"], key="vh")
+
+    st.caption("Default: 1080x1920 (9:16 verticale per Reels)")
+
+    if st.button("💾 Salva", type="primary", key="save_avatar"):
+        save_settings(settings)
+        st.success("✅ Salvato!")
     else:
         st.warning("Nessuna voce custom trovata.")
 
