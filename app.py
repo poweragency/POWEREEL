@@ -81,26 +81,50 @@ def save_settings(settings: dict) -> None:
 
 @st.cache_data(ttl=300)
 def get_heygen_avatars() -> list[dict]:
+    """Get only user's custom avatars (not stock)."""
     api_key = os.getenv("HEYGEN_API_KEY", "")
     if not api_key:
         return []
     try:
+        # Use avatar_group.list — only returns user's own avatars
         r = httpx.get(
+            "https://api.heygen.com/v2/avatar_group.list",
+            headers={"X-Api-Key": api_key},
+            timeout=15,
+        )
+        groups = r.json().get("data", {}).get("avatar_group_list", [])
+
+        # Also get avatars for the IDs and preview images
+        r2 = httpx.get(
             "https://api.heygen.com/v2/avatars",
             headers={"X-Api-Key": api_key},
             timeout=15,
         )
-        data = r.json().get("data", {}).get("avatars", [])
-        seen = set()
+        all_avatars = r2.json().get("data", {}).get("avatars", [])
+
+        # Match groups to avatar data
         result = []
-        for a in data:
-            aid = a["avatar_id"]
-            if aid in seen:
+        seen = set()
+        for g in groups:
+            name = g["name"]
+            if name in seen:
                 continue
-            seen.add(aid)
-            is_custom = a.get("type") is None
-            if is_custom:
-                result.append({"avatar_id": aid, "avatar_name": a["avatar_name"]})
+            seen.add(name)
+            # Find matching avatar for preview image
+            preview = g.get("preview_image", "")
+            avatar_id = ""
+            for a in all_avatars:
+                if a["avatar_name"] == name:
+                    avatar_id = a["avatar_id"]
+                    preview = a.get("preview_image_url", preview)
+                    break
+            if avatar_id:
+                result.append({
+                    "avatar_id": avatar_id,
+                    "avatar_name": name,
+                    "preview_image": preview,
+                    "num_looks": g.get("num_looks", 1),
+                })
         return result
     except Exception:
         return []
@@ -185,23 +209,28 @@ if page == "🎭 Avatar & Voce":
     current_avatar = settings["heygen"]["avatar_id"]
 
     if avatars:
-        avatar_options = {a["avatar_name"]: a["avatar_id"] for a in avatars}
-        current_name = next((a["avatar_name"] for a in avatars if a["avatar_id"] == current_avatar), avatars[0]["avatar_name"])
+        cols = st.columns(len(avatars))
+        for i, avatar in enumerate(avatars):
+            with cols[i]:
+                is_selected = avatar["avatar_id"] == current_avatar
+                border = "3px solid #E8163C" if is_selected else "1px solid #444"
+                badge = "✅ ATTIVO" if is_selected else ""
 
-        selected_name = st.radio(
-            "I tuoi avatar",
-            list(avatar_options.keys()),
-            index=list(avatar_options.keys()).index(current_name) if current_name in avatar_options else 0,
-            horizontal=True,
-        )
-
-        if avatar_options[selected_name] != current_avatar:
-            settings["heygen"]["avatar_id"] = avatar_options[selected_name]
-            save_settings(settings)
-            st.success(f"Avatar cambiato: **{selected_name}**")
+                st.markdown(
+                    f'<div style="border:{border}; border-radius:12px; padding:8px; text-align:center;">'
+                    f'<img src="{avatar["preview_image"]}" style="width:100%; border-radius:8px; max-height:200px; object-fit:cover;">'
+                    f'<p style="margin:6px 0 2px; font-weight:bold; font-size:16px;">{avatar["avatar_name"]}</p>'
+                    f'<p style="margin:0; color:#E8163C; font-size:12px;">{badge}</p>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+                if not is_selected:
+                    if st.button("Seleziona", key=f"av_{avatar['avatar_id']}", use_container_width=True):
+                        settings["heygen"]["avatar_id"] = avatar["avatar_id"]
+                        save_settings(settings)
+                        st.rerun()
     else:
         st.warning("Impossibile caricare gli avatar. Verifica la API key di HeyGen.")
-        st.text_input("Avatar ID (manuale)", current_avatar, key="manual_avatar")
 
     st.divider()
 
@@ -211,20 +240,18 @@ if page == "🎭 Avatar & Voce":
     current_voice = settings["heygen"]["voice_id"]
 
     if voices:
-        voice_options = {f"{v['name']} ({v['language']})": v["voice_id"] for v in voices}
-        current_vname = next((f"{v['name']} ({v['language']})" for v in voices if v["voice_id"] == current_voice), list(voice_options.keys())[0])
-
-        selected_voice = st.radio(
-            "Le tue voci",
-            list(voice_options.keys()),
-            index=list(voice_options.keys()).index(current_vname) if current_vname in voice_options else 0,
-            horizontal=True,
-        )
-
-        if voice_options[selected_voice] != current_voice:
-            settings["heygen"]["voice_id"] = voice_options[selected_voice]
-            save_settings(settings)
-            st.success(f"Voce cambiata: **{selected_voice}**")
+        for voice in voices:
+            is_selected = voice["voice_id"] == current_voice
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                icon = "✅" if is_selected else "🎙️"
+                st.write(f"{icon} **{voice['name']}** — {voice['language']}")
+            with col2:
+                if not is_selected:
+                    if st.button("Seleziona", key=f"vc_{voice['voice_id']}", use_container_width=True):
+                        settings["heygen"]["voice_id"] = voice["voice_id"]
+                        save_settings(settings)
+                        st.rerun()
     else:
         st.warning("Nessuna voce custom trovata.")
 
