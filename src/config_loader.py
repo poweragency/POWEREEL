@@ -55,6 +55,8 @@ class HeyGenConfig(BaseModel):
     video_height: int = 1920
     background_type: str = "color"        # "color", "image", or "video"
     background_value: str = "#000000"     # hex color, image URL, or video URL
+    caption: bool = False                 # Use HeyGen's built-in captions
+    subtitle_source: str = "custom"       # "custom" (our editor) or "heygen"
     poll_interval_seconds: int = 15
     poll_max_attempts: int = 40
 

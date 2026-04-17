@@ -377,29 +377,52 @@ elif page == "✍️ Script & Tono":
 elif page == "🎨 Stile Sottotitoli":
     st.title("🎨 Stile Sottotitoli")
 
-    sub = settings["editor"]["subtitle"]
-
-    col1, col2 = st.columns(2)
-    with col1:
-        sub["font_size"] = st.slider("Dimensione font", 30, 120, sub["font_size"])
-        sub["words_per_subtitle"] = st.slider("Parole per frame", 2, 6, sub["words_per_subtitle"])
-        sub["stroke_width"] = st.slider("Spessore bordo", 1, 10, sub["stroke_width"])
-    with col2:
-        sub["font_color"] = st.color_picker("Colore testo", sub["font_color"])
-        sub["accent_color"] = st.color_picker("Colore box highlight", sub["accent_color"])
-        sub["stroke_color"] = st.color_picker("Colore bordo", sub["stroke_color"])
-
-    sub["uppercase"] = st.toggle("TUTTO MAIUSCOLO", sub.get("uppercase", True))
-
-    font_options = {
-        "Bebas Neue": "./assets/fonts/BebasNeue-Regular.ttf",
-        "Montserrat Bold": "./assets/fonts/Montserrat-Bold.ttf",
+    # ── Subtitle source ──
+    st.subheader("Sorgente Sottotitoli")
+    source_options = {
+        "heygen": "HeyGen (integrati nel video, stile HeyGen)",
+        "custom": "Custom (stile nicktrading_, aggiunti dal nostro editor)",
     }
-    current_font = "Bebas Neue" if "Bebas" in sub["font_path"] else "Montserrat Bold"
-    selected_font = st.selectbox("Font", list(font_options.keys()), index=list(font_options.keys()).index(current_font))
-    sub["font_path"] = font_options[selected_font]
+    current_source = settings["heygen"].get("subtitle_source", "custom")
+    selected_source = st.radio(
+        "Da dove arrivano i sottotitoli?",
+        list(source_options.keys()),
+        index=list(source_options.keys()).index(current_source),
+        format_func=lambda x: source_options[x],
+    )
+    settings["heygen"]["subtitle_source"] = selected_source
+    settings["heygen"]["caption"] = selected_source == "heygen"
 
-    settings["editor"]["subtitle"] = sub
+    st.divider()
+
+    # ── Custom style settings (only if custom) ──
+    if selected_source == "custom":
+        st.subheader("Personalizza Stile Custom")
+        sub = settings["editor"]["subtitle"]
+
+        col1, col2 = st.columns(2)
+        with col1:
+            sub["font_size"] = st.slider("Dimensione font", 30, 120, sub["font_size"])
+            sub["words_per_subtitle"] = st.slider("Parole per frame", 2, 6, sub["words_per_subtitle"])
+            sub["stroke_width"] = st.slider("Spessore bordo", 1, 10, sub["stroke_width"])
+        with col2:
+            sub["font_color"] = st.color_picker("Colore testo", sub["font_color"])
+            sub["accent_color"] = st.color_picker("Colore box highlight", sub["accent_color"])
+            sub["stroke_color"] = st.color_picker("Colore bordo", sub["stroke_color"])
+
+        sub["uppercase"] = st.toggle("TUTTO MAIUSCOLO", sub.get("uppercase", True))
+
+        font_options = {
+            "Bebas Neue": "./assets/fonts/BebasNeue-Regular.ttf",
+            "Montserrat Bold": "./assets/fonts/Montserrat-Bold.ttf",
+        }
+        current_font = "Bebas Neue" if "Bebas" in sub["font_path"] else "Montserrat Bold"
+        selected_font = st.selectbox("Font", list(font_options.keys()), index=list(font_options.keys()).index(current_font))
+        sub["font_path"] = font_options[selected_font]
+
+        settings["editor"]["subtitle"] = sub
+    else:
+        st.info("I sottotitoli verranno generati da HeyGen direttamente nel video. Nessuna personalizzazione necessaria.")
 
     st.divider()
 

@@ -114,10 +114,18 @@ def run_pipeline(
 
         # ── Stage 4: Editing ──────────────────────────────────────────
         if start_index <= 3:
-            logger.info("── Stage 4/5: Post-produzione video ──")
-            from .editor import edit_video
+            if config.heygen.subtitle_source == "heygen" and config.heygen.caption:
+                # HeyGen captions already baked in — skip custom editing
+                logger.info("── Stage 4/5: SKIP (sottotitoli HeyGen integrati) ──")
+                import shutil
+                final_path = run_dir / "final.mp4"
+                shutil.copy2(avatar_path, final_path)
+                logger.info("Video HeyGen con caption copiato come finale")
+            else:
+                logger.info("── Stage 4/5: Post-produzione video ──")
+                from .editor import edit_video
 
-            final_path = edit_video(avatar_path, script, config.editor, run_dir)
+                final_path = edit_video(avatar_path, script, config.editor, run_dir)
         else:
             final_path = run_dir / "final.mp4"
             if not final_path.exists():

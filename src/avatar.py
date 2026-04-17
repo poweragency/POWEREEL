@@ -53,6 +53,7 @@ def _create_video(script: str, config: HeyGenConfig, api_key: str) -> str:
             "width": config.video_width,
             "height": config.video_height,
         },
+        "caption": config.caption,
     }
 
     response = httpx.post(
@@ -93,8 +94,13 @@ def _poll_status(video_id: str, config: HeyGenConfig, api_key: str) -> str:
         )
 
         if status == "completed":
-            video_url = data["video_url"]
-            logger.info("Video HeyGen pronto: %s", video_url)
+            # If captions enabled, prefer the captioned version
+            if config.caption and data.get("video_url_caption"):
+                video_url = data["video_url_caption"]
+                logger.info("Video HeyGen con caption pronto")
+            else:
+                video_url = data["video_url"]
+                logger.info("Video HeyGen pronto")
             return video_url
 
         if status == "failed":
