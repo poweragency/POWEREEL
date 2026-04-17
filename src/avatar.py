@@ -44,8 +44,8 @@ def _create_video(script: str, config: HeyGenConfig, api_key: str) -> str:
                     "voice_id": config.voice_id,
                 },
                 "background": {
-                    "type": "color",
-                    "value": "#000000",
+                    "type": config.background_type,
+                    "value": config.background_value,
                 },
             }
         ],

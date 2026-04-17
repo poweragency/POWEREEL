@@ -255,6 +255,35 @@ if page == "🎭 Avatar & Voce":
     else:
         st.warning("Nessuna voce custom trovata.")
 
+    st.divider()
+
+    # ── Background ──
+    st.subheader("Sfondo Video")
+
+    bg_type = st.selectbox(
+        "Tipo di sfondo",
+        ["color", "image", "video"],
+        index=["color", "image", "video"].index(settings["heygen"].get("background_type", "color")),
+        format_func=lambda x: {"color": "Colore solido", "image": "Immagine (URL)", "video": "Video (URL)"}[x],
+    )
+    settings["heygen"]["background_type"] = bg_type
+
+    if bg_type == "color":
+        settings["heygen"]["background_value"] = st.color_picker(
+            "Colore sfondo", settings["heygen"].get("background_value", "#000000")
+        )
+    else:
+        label = "URL immagine sfondo" if bg_type == "image" else "URL video sfondo"
+        settings["heygen"]["background_value"] = st.text_input(
+            label, settings["heygen"].get("background_value", "")
+        )
+
+    st.caption("Formato video: 1080x1920 (9:16 verticale, formato Reel)")
+
+    if st.button("💾 Salva", type="primary", key="save_avatar"):
+        save_settings(settings)
+        st.success("✅ Salvato!")
+
 
 elif page == "📰 Fonti Notizie":
     st.title("📰 Fonti Notizie")

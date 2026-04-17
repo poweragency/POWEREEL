@@ -44,7 +44,9 @@ heygen:
   avatar_id: "2aabaf0a881e41ad83d10eeaaedaf603"    # vik2
   voice_id: "2fa3feadb7884b849657f78df86a5057"     # VERYRA
   video_width: 1080
-  video_height: 1920               # 9:16 verticale
+  video_height: 1920               # 9:16 verticale (formato Reel)
+  background_type: "color"         # "color", "image", o "video"
+  background_value: "#000000"      # Colore hex, URL immagine, o URL video
   poll_interval_seconds: 15
   poll_max_attempts: 40            # ~10 minuti max
 

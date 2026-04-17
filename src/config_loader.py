@@ -53,6 +53,8 @@ class HeyGenConfig(BaseModel):
     voice_id: str = ""
     video_width: int = 1080
     video_height: int = 1920
+    background_type: str = "color"        # "color", "image", or "video"
+    background_value: str = "#000000"     # hex color, image URL, or video URL
     poll_interval_seconds: int = 15
     poll_max_attempts: int = 40
 
