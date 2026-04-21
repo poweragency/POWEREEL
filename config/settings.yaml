@@ -1,82 +1,96 @@
 pipeline:
   dry_run: true
-  schedule_cron: "0 8 * * *"      # Ogni giorno alle 8:00
-  output_dir: "./output"
+  schedule_cron: 0 8 * * *
+  output_dir: ./output
   max_days_kept: 7
-
 scraper:
   feeds:
-    - name: CoinDesk
-      url: https://www.coindesk.com/arc/outboundfeeds/rss/
-      lang: en
-    - name: CoinTelegraph
-      url: https://cointelegraph.com/rss
-      lang: en
-    - name: Il Sole 24 Ore Finanza
-      url: https://www.ilsole24ore.com/rss/finanza.xml
-      lang: it
+  - name: CoinDesk
+    url: https://www.coindesk.com/arc/outboundfeeds/rss/
+    lang: en
+  - name: CoinTelegraph
+    url: https://cointelegraph.com/rss
+    lang: en
+  - name: Il Sole 24 Ore Finanza
+    url: https://www.ilsole24ore.com/rss/finanza.xml
+    lang: it
   max_articles_per_feed: 5
   max_total_articles: 10
-
 scriptwriter:
   model: claude-sonnet-4-20250514
   max_tokens: 1024
   target_duration_seconds: 45
   language: it
-  tone: "coinvolgente, diretto, informativo, leggermente informale"
-  system_prompt: |
-    Sei un creator italiano di reel finanziari su Instagram.
+  tone: coinvolgente, diretto, informativo, leggermente informale
+  system_prompt: 'Sei un creator italiano di reel finanziari su Instagram.
+
     Scrivi uno script parlato per un video di circa {duration} secondi.
+
     Tono: {tone}.
 
+
     Lo script deve avere:
+
     - Un hook iniziale forte (prima frase accattivante per fermare lo scroll)
+
     - 2-3 notizie chiave riassunte in modo chiaro e semplice
+
     - Una chiusura con call-to-action (seguimi, commenta, condividi)
 
+
     Regole:
+
     - Scrivi SOLO lo script parlato, senza indicazioni di regia o note
+
     - Usa un linguaggio naturale e colloquiale, come se parlassi a un amico
+
     - Non usare emoji nel testo
+
     - Circa {word_count} parole totali
 
+    '
 heygen:
-  avatar_id: "12e2f2b417424069978fb86429c5f9c9"    # vik2 - Bearded podcaster with black glasses
-  voice_id: "2fa3feadb7884b849657f78df86a5057"     # VERYRA
+  avatar_id: c32572d257c8467b90578bd8a2dd8e6a
+  voice_id: 2fa3feadb7884b849657f78df86a5057
   video_width: 1080
-  video_height: 1920               # 9:16 verticale (formato Reel)
-  background_type: "color"         # "color", "image", o "video"
-  background_value: "#000000"      # Colore hex, URL immagine, o URL video
+  video_height: 1920
+  background_type: color
+  background_value: '#000000'
   poll_interval_seconds: 15
-  poll_max_attempts: 40            # ~10 minuti max
-
+  poll_max_attempts: 40
 editor:
   subtitle:
-    font_path: "./assets/fonts/BebasNeue-Regular.ttf"
+    font_path: ./assets/fonts/BebasNeue-Regular.ttf
     font_size: 90
-    font_color: "#FFFFFF"
-    accent_color: "#E8163C"
-    stroke_color: "#000000"
+    font_color: '#FFFFFF'
+    accent_color: '#E8163C'
+    stroke_color: '#000000'
     stroke_width: 5
     position: center
     max_chars_per_line: 25
     words_per_subtitle: 3
     uppercase: true
   background_music:
-    path: "./assets/music/default_bg.mp3"
+    path: ./assets/music/default_bg.mp3
     volume: 0.08
-  intro_clip: null                 # Percorso a intro.mp4 o null per saltare
-  outro_clip: null                 # Percorso a outro.mp4 o null per saltare
+  intro_clip: null
+  outro_clip: null
   lower_third:
-    image: null                    # Percorso a lower_third.png o null
+    image: null
     duration_seconds: 5
-    position: [540, 1600]
-
+    position:
+    - 540
+    - 1600
 publisher:
-  caption_template: |
-    📊 Le news crypto e finanza di oggi!
+  caption_template: '📊 Le news crypto e finanza di oggi!
+
     .
+
     {summary_bullets}
+
     .
+
     #crypto #finanza #bitcoin #investimenti #reels #trading #criptovalute
+
+    '
   max_hashtags: 30

@@ -368,8 +368,8 @@ def edit_video(
         base.duration, base.size[0], base.size[1],
     )
 
-    # Auto-zoom: remove black bars and fill 9:16
-    base = _auto_zoom_vertical(base)
+    # NOTE: auto-zoom rimosso. Usiamo solo avatar gia' in formato Reel verticale 1080x1920
+    # selezionati dalla dashboard, quindi il video HeyGen e' gia' a schermo pieno.
 
     subtitle_clips = _create_subtitle_clips(
         avatar_video_path, base.duration, tuple(base.size), config

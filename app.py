@@ -22,6 +22,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# Disable browser auto-translation
+st.markdown(
+    '<meta name="google" content="notranslate">',
+    unsafe_allow_html=True,
+)
+
 PROJECT_ROOT = Path(__file__).parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 ENV_PATH = PROJECT_ROOT / "config" / ".env"
@@ -85,6 +91,10 @@ def save_settings(s: dict) -> None:
 
 @st.cache_data(ttl=300)
 def get_heygen_data() -> dict:
+    """Get HeyGen avatars filtered to ONLY vertical/Reel format (9:16)."""
+    from PIL import Image
+    from io import BytesIO
+
     api_key = os.getenv("HEYGEN_API_KEY", "")
     if not api_key:
         return {"groups": [], "looks": {}, "voices": []}
@@ -93,24 +103,46 @@ def get_heygen_data() -> dict:
             "https://api.heygen.com/v2/avatar_group.list",
             headers={"X-Api-Key": api_key}, timeout=15,
         )
-        groups = r.json().get("data", {}).get("avatar_group_list", [])
+        groups_raw = r.json().get("data", {}).get("avatar_group_list", [])
 
         looks = {}
-        for g in groups:
+        groups = []
+        for g in groups_raw:
             r2 = httpx.get(
                 f"https://api.heygen.com/v2/avatar_group/{g['id']}/avatars",
                 headers={"X-Api-Key": api_key}, timeout=15,
             )
-            if r2.status_code == 200:
-                avatar_list = r2.json().get("data", {}).get("avatar_list", [])
-                looks[g["name"]] = [
-                    {
-                        "look_id": a.get("id", a.get("avatar_id", "")),
-                        "name": a.get("name", "Default"),
-                        "image_url": a.get("image_url", ""),
-                    }
-                    for a in avatar_list if a.get("id") or a.get("avatar_id")
-                ]
+            if r2.status_code != 200:
+                continue
+            avatar_list = r2.json().get("data", {}).get("avatar_list", [])
+
+            vertical_looks = []
+            for a in avatar_list:
+                lid = a.get("id") or a.get("avatar_id")
+                if not lid:
+                    continue
+                img_url = a.get("image_url", "")
+                if not img_url or not img_url.startswith("http"):
+                    continue
+                # Check if vertical (Reel format)
+                try:
+                    img_r = httpx.get(img_url, timeout=10)
+                    img = Image.open(BytesIO(img_r.content))
+                    w, h = img.size
+                    if h <= w:
+                        continue  # skip non-vertical
+                except Exception:
+                    continue
+
+                vertical_looks.append({
+                    "look_id": lid,
+                    "name": a.get("name", "Default"),
+                    "image_url": img_url,
+                })
+
+            if vertical_looks:
+                looks[g["name"]] = vertical_looks
+                groups.append(g)
 
         rv = httpx.get(
             "https://api.heygen.com/v2/voices",
@@ -178,14 +210,24 @@ if "gen_running" not in st.session_state:
     st.session_state.gen_running = False
 
 STEPS = [
-    "1. Avatar & Look",
+    "1. Avatar e Look",
     "2. Voce",
     "3. Fonti Notizie",
-    "4. Script & Tono",
+    "4. Script e Tono",
     "5. Stile Sottotitoli",
     "6. Instagram",
-    "7. Genera & Pubblica",
+    "7. Genera e Pubblica",
 ]
+
+STEP_TITLES = {
+    1: "Passo 1 — Avatar e Look",
+    2: "Passo 2 — Voce",
+    3: "Passo 3 — Fonti Notizie",
+    4: "Passo 4 — Script e Tono",
+    5: "Passo 5 — Stile Sottotitoli",
+    6: "Passo 6 — Instagram",
+    7: "Passo 7 — Genera e Pubblica",
+}
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
@@ -232,7 +274,7 @@ def nav_buttons(current_step: int, can_proceed: bool, next_label: str = "Avanti 
 # ── STEP 1: Avatar & Look ────────────────────────────────────────────────────
 
 if st.session_state.step == 1:
-    st.title("Step 1 — Avatar & Look")
+    st.title(STEP_TITLES[1])
     st.caption("Scegli quale dei tuoi avatar usare e quale look (outfit/scenario)")
 
     groups = data["groups"]
@@ -296,7 +338,7 @@ if st.session_state.step == 1:
 # ── STEP 2: Voce ─────────────────────────────────────────────────────────────
 
 elif st.session_state.step == 2:
-    st.title("Step 2 — Voce")
+    st.title(STEP_TITLES[2])
     st.caption("Scegli quale voce clonata usare")
 
     voices = data["voices"]
@@ -328,7 +370,7 @@ elif st.session_state.step == 2:
 # ── STEP 3: Fonti Notizie ────────────────────────────────────────────────────
 
 elif st.session_state.step == 3:
-    st.title("Step 3 — Fonti Notizie")
+    st.title(STEP_TITLES[3])
     st.caption("I siti RSS da cui prendere le notizie per generare lo script")
 
     feeds = settings["scraper"]["feeds"]
@@ -378,7 +420,7 @@ elif st.session_state.step == 3:
 # ── STEP 4: Script & Tono ────────────────────────────────────────────────────
 
 elif st.session_state.step == 4:
-    st.title("Step 4 — Script & Tono")
+    st.title(STEP_TITLES[4])
     st.caption("Come Claude scrive lo script del reel")
 
     col1, col2 = st.columns(2)
@@ -409,7 +451,7 @@ elif st.session_state.step == 4:
 # ── STEP 5: Stile Sottotitoli ────────────────────────────────────────────────
 
 elif st.session_state.step == 5:
-    st.title("Step 5 — Stile Sottotitoli")
+    st.title(STEP_TITLES[5])
 
     current_source = settings["heygen"].get("subtitle_source", "custom")
 
@@ -475,7 +517,7 @@ elif st.session_state.step == 5:
 # ── STEP 6: Instagram ────────────────────────────────────────────────────────
 
 elif st.session_state.step == 6:
-    st.title("Step 6 — Instagram")
+    st.title(STEP_TITLES[6])
     st.caption("Caption, hashtag e impostazioni di pubblicazione")
 
     settings["publisher"]["caption_template"] = st.text_area(
@@ -502,7 +544,7 @@ elif st.session_state.step == 6:
 # ── STEP 7: Genera & Pubblica ────────────────────────────────────────────────
 
 elif st.session_state.step == 7:
-    st.title("Step 7 — Genera & Pubblica")
+    st.title(STEP_TITLES[7])
     st.caption("Genera il reel e pubblicalo su Instagram")
 
     today = date.today().isoformat()
