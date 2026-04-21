@@ -195,9 +195,14 @@ def _create_subtitle_clips(
     video_size: tuple[int, int],
     config: EditorConfig,
 ) -> list[ImageClip]:
-    """Create subtitle clips using Whisper word-level timestamps for perfect sync."""
+    """Karaoke-style subtitles: highlight moves word-by-word in perfect sync.
+
+    For each spoken word, render a frame showing N words (a phrase window)
+    with the currently-spoken word highlighted in red. The clip is shown
+    for exactly the duration that word is being spoken.
+    """
     sub_config = config.subtitle
-    words_per_chunk = sub_config.words_per_subtitle
+    window_size = sub_config.words_per_subtitle  # how many words shown together
 
     # Get word-level timestamps from audio
     timed_words = _transcribe_with_timestamps(audio_path, language="it")
@@ -206,41 +211,44 @@ def _create_subtitle_clips(
         logger.warning("Nessuna parola trascritta — sottotitoli saltati")
         return []
 
-    # Group words into chunks
-    chunks = []
-    for i in range(0, len(timed_words), words_per_chunk):
-        chunk_words = timed_words[i : i + words_per_chunk]
-        if not chunk_words:
-            continue
-        text = " ".join(w["text"] for w in chunk_words)
-        start = chunk_words[0]["start"]
-        end = chunk_words[-1]["end"]
-        # Pick keyword index within this chunk
-        keyword_idx = _pick_keyword([w["text"] for w in chunk_words])
-        chunks.append({
-            "text": text,
-            "start": start,
-            "end": end,
-            "keyword_idx": keyword_idx,
-        })
-
+    n = len(timed_words)
     clips = []
-    for chunk in chunks:
+
+    for i, word in enumerate(timed_words):
+        # Define the phrase window: try to keep the spoken word centered
+        # but don't go out of bounds
+        offset = window_size // 2
+        win_start = max(0, i - offset)
+        win_end = min(n, win_start + window_size)
+        # If we hit the end, slide the window back to keep size = window_size
+        if win_end - win_start < window_size:
+            win_start = max(0, win_end - window_size)
+
+        window_words = timed_words[win_start:win_end]
+        text = " ".join(w["text"] for w in window_words)
+        # Index of the currently-spoken word within the window
+        highlight_idx = i - win_start
+
         img_array = _render_subtitle_nicktrading(
-            text=chunk["text"],
-            highlight_idx=chunk["keyword_idx"],
+            text=text,
+            highlight_idx=highlight_idx,
             font_path=sub_config.font_path,
             font_size=sub_config.font_size,
         )
 
         clip = ImageClip(img_array, transparent=True)
-        clip = clip.with_start(chunk["start"])
-        clip = clip.with_duration(chunk["end"] - chunk["start"] + 0.05)
+        clip = clip.with_start(word["start"])
+        # Duration = until the next word starts (no gap, no overlap)
+        if i + 1 < n:
+            duration = timed_words[i + 1]["start"] - word["start"]
+        else:
+            duration = max(0.1, word["end"] - word["start"] + 0.2)
+        clip = clip.with_duration(max(0.05, duration))
         clip = clip.with_position(("center", 0.58), relative=True)
 
         clips.append(clip)
 
-    logger.info("Creati %d sottotitoli con timing reale Whisper", len(clips))
+    logger.info("Creati %d sottotitoli karaoke (un clip per parola, sync esatto)", len(clips))
     return clips
 
 

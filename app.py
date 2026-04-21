@@ -240,8 +240,28 @@ def get_generation_result() -> str | None:
 settings = load_settings()
 data = get_heygen_data()
 
+# Persist current step across refreshes via file
+STEP_FILE = PROJECT_ROOT / "logs" / "current_step.txt"
+STEP_FILE.parent.mkdir(exist_ok=True)
+
+
+def _read_step() -> int:
+    if STEP_FILE.exists():
+        try:
+            return max(1, min(int(STEP_FILE.read_text().strip()), 7))
+        except Exception:
+            return 1
+    return 1
+
+
+def goto_step(n: int):
+    n = max(1, min(n, 7))
+    st.session_state.step = n
+    STEP_FILE.write_text(str(n))
+
+
 if "step" not in st.session_state:
-    st.session_state.step = 1
+    st.session_state.step = _read_step()
 
 STEPS = [
     "1. Avatar e Look",
@@ -285,7 +305,7 @@ for i, name in enumerate(STEPS, 1):
 
 st.sidebar.divider()
 if st.sidebar.button("🔄 Ricomincia da Step 1"):
-    st.session_state.step = 1
+    goto_step(1)
     st.rerun()
 
 
@@ -296,12 +316,12 @@ def nav_buttons(current_step: int, can_proceed: bool, next_label: str = "Avanti 
     with col_back:
         if current_step > 1:
             if st.button("← Indietro", use_container_width=True):
-                st.session_state.step -= 1
+                goto_step(current_step - 1)
                 st.rerun()
     with col_next:
         if current_step < len(STEPS):
             if st.button(next_label, type="primary", use_container_width=True, disabled=not can_proceed):
-                st.session_state.step += 1
+                goto_step(current_step + 1)
                 st.rerun()
 
 
@@ -636,7 +656,10 @@ elif st.session_state.step == 7:
             with st.expander("📝 Script"):
                 st.text(script_path.read_text(encoding="utf-8"))
 
-        st.video(str(final_path))
+        # Reel-sized preview (~360px wide, 9:16 ratio)
+        col_l, col_v, col_r = st.columns([1, 1, 2])
+        with col_v:
+            st.video(str(final_path))
 
         st.divider()
         st.subheader("📤 Pubblicazione")

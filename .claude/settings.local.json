@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(taskkill //F //IM streamlit.exe)",
-      "Bash(streamlit run *)"
+      "Bash(streamlit run *)",
+      "Bash(python -c ' *)"
     ]
   }
 }
