@@ -248,9 +248,30 @@ def get_generation_result() -> str | None:
 settings = load_settings()
 data = get_heygen_data()
 
+# ── Pricing constants (admin cost analysis) ─────────────────────────────────
+
+# HeyGen: ~$0.066 per API credit (1500 credits = $99/mo Business pack)
+HEYGEN_USD_PER_CREDIT = 0.066
+
+# Claude Sonnet 4: $3/M input, $15/M output. Avg ~800 in + 250 out per script.
+CLAUDE_USD_PER_SCRIPT = (800 * 3 / 1_000_000) + (250 * 15 / 1_000_000)  # ~$0.006
+
+
 # Persist current step across refreshes via file
 STEP_FILE = PROJECT_ROOT / "logs" / "current_step.txt"
 STEP_FILE.parent.mkdir(exist_ok=True)
+
+
+def _video_count_from_outputs() -> int:
+    """Count generated videos in output/ folders."""
+    out = PROJECT_ROOT / "output"
+    if not out.exists():
+        return 0
+    count = 0
+    for folder in out.iterdir():
+        if folder.is_dir() and (folder / "final.mp4").exists():
+            count += 1
+    return count
 
 
 def _read_step() -> int:
@@ -270,6 +291,9 @@ def goto_step(n: int):
 
 if "step" not in st.session_state:
     st.session_state.step = _read_step()
+
+if "view" not in st.session_state:
+    st.session_state.view = "wizard"  # "wizard" or "costs"
 
 STEPS = [
     "1. Avatar e Look",
@@ -300,21 +324,34 @@ st.sidebar.caption("Wizard step-by-step")
 credits = get_heygen_credits()
 if credits >= 0:
     st.sidebar.metric("Crediti HeyGen API", credits)
+    remaining_value = credits * HEYGEN_USD_PER_CREDIT
+    st.sidebar.caption(f"≈ ${remaining_value:.2f} rimasti")
 
 st.sidebar.divider()
-st.sidebar.markdown("### Progresso")
-for i, name in enumerate(STEPS, 1):
-    if i < st.session_state.step:
-        st.sidebar.markdown(f"✅ {name}")
-    elif i == st.session_state.step:
-        st.sidebar.markdown(f"**🔵 {name}**")
-    else:
-        st.sidebar.markdown(f"⚪ {name}")
 
-st.sidebar.divider()
-if st.sidebar.button("🔄 Ricomincia da Step 1"):
-    goto_step(1)
-    st.rerun()
+# ── View switcher ──
+if st.session_state.view == "wizard":
+    st.sidebar.markdown("### Progresso")
+    for i, name in enumerate(STEPS, 1):
+        if i < st.session_state.step:
+            st.sidebar.markdown(f"✅ {name}")
+        elif i == st.session_state.step:
+            st.sidebar.markdown(f"**🔵 {name}**")
+        else:
+            st.sidebar.markdown(f"⚪ {name}")
+
+    st.sidebar.divider()
+    if st.sidebar.button("🔄 Ricomincia da Step 1"):
+        goto_step(1)
+        st.rerun()
+
+    if st.sidebar.button("💰 Centro Costi (Admin)", use_container_width=True):
+        st.session_state.view = "costs"
+        st.rerun()
+else:
+    if st.sidebar.button("← Torna al Wizard", use_container_width=True, type="primary"):
+        st.session_state.view = "wizard"
+        st.rerun()
 
 
 # ── Wizard navigation ───────────────────────────────────────────────────────
@@ -331,6 +368,133 @@ def nav_buttons(current_step: int, can_proceed: bool, next_label: str = "Avanti 
             if st.button(next_label, type="primary", use_container_width=True, disabled=not can_proceed):
                 goto_step(current_step + 1)
                 st.rerun()
+
+
+# ── COST CENTER (admin) ─────────────────────────────────────────────────────
+
+if st.session_state.view == "costs":
+    st.markdown('<h1 translate="no" lang="it">💰 Centro Costi</h1>', unsafe_allow_html=True)
+    st.caption("Analisi dettagliata dei costi per la generazione dei reel")
+
+    target_duration = settings["scriptwriter"]["target_duration_seconds"]
+
+    # ── Cost per video ──
+    st.subheader("📹 Costo per video")
+
+    heygen_credits_per_video = target_duration  # ~1 credit/sec
+    heygen_cost_per_video = heygen_credits_per_video * HEYGEN_USD_PER_CREDIT
+    total_per_video = heygen_cost_per_video + CLAUDE_USD_PER_SCRIPT
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric(
+            "HeyGen (avatar)",
+            f"${heygen_cost_per_video:.3f}",
+            f"{heygen_credits_per_video} crediti × ${HEYGEN_USD_PER_CREDIT:.3f}",
+        )
+    with c2:
+        st.metric(
+            "Claude (script)",
+            f"${CLAUDE_USD_PER_SCRIPT:.3f}",
+            "~800 in + 250 out tokens",
+        )
+    with c3:
+        st.metric(
+            "Totale per video",
+            f"${total_per_video:.3f}",
+            f"video di {target_duration}s",
+        )
+
+    st.info(
+        f"**Stima:** ogni reel da {target_duration} secondi costa circa "
+        f"**${total_per_video:.2f}** in API."
+    )
+
+    st.divider()
+
+    # ── HeyGen balance ──
+    st.subheader("🪙 Saldo HeyGen API")
+
+    if credits >= 0:
+        remaining_value = credits * HEYGEN_USD_PER_CREDIT
+        videos_left = credits // max(1, heygen_credits_per_video)
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Crediti rimanenti", f"{credits}")
+        with c2:
+            st.metric("Valore residuo", f"${remaining_value:.2f}")
+        with c3:
+            st.metric(
+                f"Video da {target_duration}s ancora generabili",
+                f"~{videos_left}",
+            )
+    else:
+        st.warning("Impossibile leggere il saldo HeyGen")
+
+    st.divider()
+
+    # ── Usage so far ──
+    st.subheader("📊 Utilizzo finora")
+
+    videos_made = _video_count_from_outputs()
+    estimated_total_spent = videos_made * total_per_video
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric("Video generati (locali)", videos_made)
+    with c2:
+        st.metric("Costo stimato totale", f"${estimated_total_spent:.2f}")
+
+    st.divider()
+
+    # ── Monthly projection ──
+    st.subheader("📅 Proiezione mensile")
+
+    scenarios = [
+        ("1 reel al giorno", 1),
+        ("2 reel al giorno", 2),
+        ("3 reel al giorno", 3),
+        ("5 reel al giorno", 5),
+    ]
+
+    cols = st.columns(len(scenarios))
+    for col, (label, per_day) in zip(cols, scenarios):
+        with col:
+            monthly = per_day * 30 * total_per_video
+            st.metric(label, f"${monthly:.2f}/mese", f"{per_day * 30} video")
+
+    st.divider()
+
+    # ── Pricing breakdown ──
+    with st.expander("📖 Dettagli prezzi"):
+        st.markdown(f"""
+        **HeyGen API:**
+        - Pacchetto crediti: ~$99 per 1500 crediti
+        - Costo per credito: **${HEYGEN_USD_PER_CREDIT:.4f}**
+        - Consumo: ~1 credito per secondo di video
+        - Per un reel di {target_duration}s: **{heygen_credits_per_video} crediti = ${heygen_cost_per_video:.3f}**
+
+        **Claude API (claude-sonnet-4):**
+        - Input: $3 per milione di token
+        - Output: $15 per milione di token
+        - Per script: ~800 input + 250 output token = **${CLAUDE_USD_PER_SCRIPT:.4f}**
+
+        **Whisper (trascrizione):**
+        - Gira in locale, **costo zero** (CPU)
+
+        **Editing video (MoviePy):**
+        - Gira in locale, **costo zero**
+
+        **Pubblicazione Instagram (Meta API):**
+        - **Gratis**
+
+        **Hosting Railway:**
+        - $5-20/mese fissi (a seconda dell'utilizzo)
+        """)
+
+    # Stop here so wizard doesn't render
+    st.stop()
 
 
 # ── STEP 1: Avatar & Look ────────────────────────────────────────────────────
