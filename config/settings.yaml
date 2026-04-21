@@ -63,7 +63,7 @@ editor:
     font_path: ./assets/fonts/BebasNeue-Regular.ttf
     font_size: 90
     font_color: '#FFFFFF'
-    accent_color: '#E8163C'
+    accent_color: '#e87416'
     stroke_color: '#000000'
     stroke_width: 5
     position: center

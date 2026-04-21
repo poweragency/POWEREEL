@@ -171,31 +171,68 @@ def get_heygen_credits() -> int:
         return -1
 
 
-def run_pipeline_background(dry_run: bool):
-    """Launch pipeline in a background thread."""
-    def _run():
-        try:
-            cmd = [
-                sys.executable, "-c",
-                f"from src.pipeline import run_pipeline; "
-                f"run_pipeline(dry_run={dry_run})"
-            ]
-            log_path = PROJECT_ROOT / "logs" / "wizard_run.log"
-            log_path.parent.mkdir(exist_ok=True)
-            with open(log_path, "w", encoding="utf-8") as logf:
-                proc = subprocess.run(
-                    cmd, stdout=logf, stderr=subprocess.STDOUT,
-                    cwd=str(PROJECT_ROOT), timeout=900,
-                )
-                st.session_state.gen_returncode = proc.returncode
-        except Exception as e:
-            st.session_state.gen_error = str(e)
-        finally:
-            st.session_state.gen_running = False
+RUN_MARKER = PROJECT_ROOT / "logs" / "wizard_run.lock"
+DONE_MARKER = PROJECT_ROOT / "logs" / "wizard_run.done"
 
-    st.session_state.gen_running = True
-    st.session_state.gen_started_at = time.time()
+
+def run_pipeline_background(dry_run: bool):
+    """Launch pipeline as a fully detached subprocess."""
+    log_path = PROJECT_ROOT / "logs" / "wizard_run.log"
+    log_path.parent.mkdir(exist_ok=True)
+
+    # Clean previous markers
+    if DONE_MARKER.exists():
+        DONE_MARKER.unlink()
+    RUN_MARKER.write_text(str(time.time()))
+
+    # Wrapper script that runs pipeline + writes DONE marker at the end
+    wrapper = (
+        "from src.pipeline import run_pipeline\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        f"DONE = Path(r'{DONE_MARKER}')\n"
+        f"LOCK = Path(r'{RUN_MARKER}')\n"
+        "try:\n"
+        f"    run_pipeline(dry_run={dry_run})\n"
+        "    DONE.write_text('ok')\n"
+        "except Exception as e:\n"
+        "    DONE.write_text(f'error: {e}')\n"
+        "    sys.exit(1)\n"
+        "finally:\n"
+        "    if LOCK.exists(): LOCK.unlink()\n"
+    )
+
+    def _run():
+        with open(log_path, "w", encoding="utf-8") as logf:
+            subprocess.run(
+                [sys.executable, "-c", wrapper],
+                stdout=logf, stderr=subprocess.STDOUT,
+                cwd=str(PROJECT_ROOT), timeout=900,
+            )
+
     threading.Thread(target=_run, daemon=True).start()
+
+
+def is_generation_running() -> bool:
+    """Check if a generation is currently running (file-based)."""
+    return RUN_MARKER.exists()
+
+
+def get_generation_started_at() -> float:
+    """Get start time of current generation, or 0."""
+    if not RUN_MARKER.exists():
+        return 0
+    try:
+        return float(RUN_MARKER.read_text().strip())
+    except Exception:
+        return time.time()
+
+
+def get_generation_result() -> str | None:
+    """Returns 'ok', 'error: ...', or None if not done yet."""
+    if not DONE_MARKER.exists():
+        return None
+    return DONE_MARKER.read_text().strip()
 
 
 # ── State ────────────────────────────────────────────────────────────────────
@@ -205,9 +242,6 @@ data = get_heygen_data()
 
 if "step" not in st.session_state:
     st.session_state.step = 1
-
-if "gen_running" not in st.session_state:
-    st.session_state.gen_running = False
 
 STEPS = [
     "1. Avatar e Look",
@@ -562,22 +596,27 @@ elif st.session_state.step == 7:
     st.divider()
 
     # Generation
-    if st.session_state.gen_running:
-        elapsed = int(time.time() - st.session_state.get("gen_started_at", time.time()))
+    running = is_generation_running()
+    if running:
+        elapsed = int(time.time() - get_generation_started_at())
         st.info(f"⏳ Generazione in corso... ({elapsed}s) — può impiegare 5-8 minuti")
         st.progress(min(elapsed / 480, 0.95))
 
-        # Show log tail
         log_path = PROJECT_ROOT / "logs" / "wizard_run.log"
         if log_path.exists():
-            with st.expander("📜 Log live"):
+            with st.expander("📜 Log live", expanded=True):
                 lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-                st.code("\n".join(lines[-15:]))
+                st.code("\n".join(lines[-20:]))
 
-        # Auto-refresh every 5 sec
         time.sleep(5)
         st.rerun()
     else:
+        result = get_generation_result()
+        if result == "ok":
+            st.success("✅ Generazione completata!")
+        elif result and result.startswith("error"):
+            st.error(f"❌ {result}")
+
         col_g, col_v = st.columns(2)
         with col_g:
             if st.button("▶️ Genera Reel (anteprima)", type="primary", use_container_width=True):
@@ -589,7 +628,7 @@ elif st.session_state.step == 7:
                 st.rerun()
 
     # Show last result
-    if final_path.exists() and not st.session_state.gen_running:
+    if final_path.exists() and not running:
         st.divider()
         st.subheader("🎬 Anteprima")
 
