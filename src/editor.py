@@ -112,8 +112,9 @@ def _render_subtitle_nicktrading(
     highlight_idx: int,
     font_path: str,
     font_size: int,
+    max_line_width: int = 900,
 ) -> np.ndarray:
-    """Render nicktrading_ style subtitle with red box on the keyword."""
+    """Render nicktrading_ style subtitle with auto line-wrap on long phrases."""
     try:
         font = ImageFont.truetype(font_path, font_size)
     except Exception:
@@ -123,7 +124,6 @@ def _render_subtitle_nicktrading(
     if not words:
         return np.zeros((10, 10, 4), dtype=np.uint8)
 
-    # Clamp highlight index
     if highlight_idx >= len(words):
         highlight_idx = 0
 
@@ -138,53 +138,72 @@ def _render_subtitle_nicktrading(
         word_data.append((w, w_width, w_height))
 
     max_height = max(wh for _, _, wh in word_data)
-    total_text_width = sum(wd[1] for wd in word_data) + space_width * (len(words) - 1)
+
+    # Wrap into lines so each line stays within max_line_width
+    lines = []  # each line: list of (idx, word, w_width, w_height)
+    current_line = []
+    current_width = 0
+    for idx, (word, w_width, w_height) in enumerate(word_data):
+        proposed = current_width + (space_width if current_line else 0) + w_width
+        if proposed > max_line_width and current_line:
+            lines.append(current_line)
+            current_line = [(idx, word, w_width, w_height)]
+            current_width = w_width
+        else:
+            current_line.append((idx, word, w_width, w_height))
+            current_width = proposed
+    if current_line:
+        lines.append(current_line)
 
     box_pad_x = 12
     box_pad_y = 8
     box_radius = 10
     stroke_w = 5
+    line_gap = 18
 
-    extra = box_pad_x * 2 + stroke_w * 2 + 40
-    img_width = int(total_text_width + extra)
-    img_height = int(max_height + box_pad_y * 2 + stroke_w * 2 + 30)
+    extra_w = box_pad_x * 2 + stroke_w * 2 + 40
+    img_width = int(max_line_width + extra_w)
+    img_height = int(
+        len(lines) * max_height
+        + (len(lines) - 1) * line_gap
+        + box_pad_y * 2 + stroke_w * 2 + 30
+    )
 
     img = Image.new("RGBA", (img_width, img_height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    x_start = (img_width - total_text_width) / 2
-    x = x_start
     y_text = stroke_w + box_pad_y + 5
 
-    for idx, (word, w_width, w_height) in enumerate(word_data):
-        # Highlighted keyword gets the red box
-        if idx == highlight_idx:
-            # Draw red rounded rectangle
-            rx1 = x - box_pad_x
-            ry1 = y_text - box_pad_y + 2
-            rx2 = x + w_width + box_pad_x
-            ry2 = y_text + max_height + box_pad_y - 2
-            draw.rounded_rectangle(
-                [rx1, ry1, rx2, ry2],
-                radius=box_radius,
-                fill=(232, 22, 60, 255),  # #E8163C — exact nicktrading_ red
-            )
-            # White text on red box
-            draw.text((x, y_text), word, font=font, fill=(255, 255, 255, 255))
-        else:
-            # Black stroke — thick, draw in a circle pattern
-            for dx in range(-stroke_w, stroke_w + 1):
-                for dy in range(-stroke_w, stroke_w + 1):
-                    # Circle pattern for smoother stroke
-                    if dx * dx + dy * dy <= stroke_w * stroke_w:
-                        draw.text(
-                            (x + dx, y_text + dy), word, font=font,
-                            fill=(0, 0, 0, 255),
-                        )
-            # White text on top
-            draw.text((x, y_text), word, font=font, fill=(255, 255, 255, 255))
+    for line in lines:
+        # Compute line width for centering
+        line_text_width = sum(ww for _, _, ww, _ in line) + space_width * (len(line) - 1)
+        x = (img_width - line_text_width) / 2
 
-        x += w_width + space_width
+        for idx, word, w_width, w_height in line:
+            if idx == highlight_idx:
+                rx1 = x - box_pad_x
+                ry1 = y_text - box_pad_y + 2
+                rx2 = x + w_width + box_pad_x
+                ry2 = y_text + max_height + box_pad_y - 2
+                draw.rounded_rectangle(
+                    [rx1, ry1, rx2, ry2],
+                    radius=box_radius,
+                    fill=(232, 22, 60, 255),
+                )
+                draw.text((x, y_text), word, font=font, fill=(255, 255, 255, 255))
+            else:
+                for dx in range(-stroke_w, stroke_w + 1):
+                    for dy in range(-stroke_w, stroke_w + 1):
+                        if dx * dx + dy * dy <= stroke_w * stroke_w:
+                            draw.text(
+                                (x + dx, y_text + dy), word, font=font,
+                                fill=(0, 0, 0, 255),
+                            )
+                draw.text((x, y_text), word, font=font, fill=(255, 255, 255, 255))
+
+            x += w_width + space_width
+
+        y_text += max_height + line_gap
 
     return np.array(img)
 
