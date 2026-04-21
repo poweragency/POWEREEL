@@ -27,3 +27,4 @@ streamlit>=1.35
 # Utilities
 tenacity>=8.2
 pydantic>=2.5
+faster-whisper>=1.0

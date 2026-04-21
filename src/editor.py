@@ -19,6 +19,82 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .config_loader import EditorConfig
 
+# Italian stop words — never highlighted
+STOP_WORDS = {
+    "il", "la", "lo", "i", "gli", "le", "un", "uno", "una",
+    "di", "a", "da", "in", "con", "su", "per", "tra", "fra",
+    "del", "dello", "della", "dei", "degli", "delle",
+    "al", "allo", "alla", "ai", "agli", "alle",
+    "dal", "dallo", "dalla", "dai", "dagli", "dalle",
+    "nel", "nello", "nella", "nei", "negli", "nelle",
+    "sul", "sullo", "sulla", "sui", "sugli", "sulle",
+    "e", "o", "ma", "se", "che", "chi", "cui", "non",
+    "è", "sono", "ho", "hai", "ha", "abbiamo", "avete", "hanno",
+    "mi", "ti", "si", "ci", "vi", "ne",
+    "questo", "questa", "questi", "queste", "quel", "quello", "quella",
+    "molto", "poco", "più", "meno", "anche", "ancora", "già", "ora",
+    "come", "quando", "dove", "perché", "perchè",
+}
+
+
+def _transcribe_with_timestamps(audio_path: Path, language: str = "it") -> list[dict]:
+    """Use Whisper to get word-level timestamps from audio."""
+    from faster_whisper import WhisperModel
+
+    logger.info("Trascrizione audio con Whisper...")
+    model = WhisperModel("small", device="cpu", compute_type="int8")
+    segments, _ = model.transcribe(
+        str(audio_path),
+        language=language,
+        word_timestamps=True,
+        vad_filter=True,
+    )
+
+    words = []
+    for segment in segments:
+        for word in segment.words:
+            words.append({
+                "start": word.start,
+                "end": word.end,
+                "text": word.word.strip(),
+            })
+
+    logger.info("Whisper: %d parole trascritte", len(words))
+    return words
+
+
+def _pick_keyword(words: list[str]) -> int:
+    """Pick the index of the most impactful word in a chunk.
+
+    Strategy:
+    1. Skip stop words
+    2. Prefer the longest word
+    3. Numbers always win
+    """
+    best_idx = 0
+    best_score = -1
+
+    for i, word in enumerate(words):
+        clean = re.sub(r"[^\w]", "", word.lower())
+        if not clean:
+            continue
+
+        # Numbers get highest priority
+        if re.search(r"\d", clean):
+            return i
+
+        # Skip stop words
+        if clean in STOP_WORDS:
+            continue
+
+        # Score by length (longer = more impactful usually)
+        score = len(clean)
+        if score > best_score:
+            best_score = score
+            best_idx = i
+
+    return best_idx
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,22 +109,11 @@ def _split_script_into_chunks(script: str, words_per_chunk: int) -> list[str]:
 
 def _render_subtitle_nicktrading(
     text: str,
-    video_width: int,
-    video_height: int,
+    highlight_idx: int,
     font_path: str,
     font_size: int,
 ) -> np.ndarray:
-    """Render EXACT nicktrading_ style subtitle.
-
-    Style details (from frame analysis):
-    - Font: Bebas Neue or Impact, very bold, condensed
-    - ALL CAPS
-    - First word of each chunk: RED rounded-rectangle box (#E8163C) behind it, white text
-    - Remaining words: white text with thick black stroke
-    - Centered horizontally
-    - Very large text, fills most of the width
-    - Box has generous padding and rounded corners
-    """
+    """Render nicktrading_ style subtitle with red box on the keyword."""
     try:
         font = ImageFont.truetype(font_path, font_size)
     except Exception:
@@ -58,6 +123,10 @@ def _render_subtitle_nicktrading(
     if not words:
         return np.zeros((10, 10, 4), dtype=np.uint8)
 
+    # Clamp highlight index
+    if highlight_idx >= len(words):
+        highlight_idx = 0
+
     space_width = font.getlength(" ")
 
     # Measure each word
@@ -66,24 +135,16 @@ def _render_subtitle_nicktrading(
         bbox = font.getbbox(w)
         w_width = bbox[2] - bbox[0]
         w_height = bbox[3] - bbox[1]
-        y_offset = bbox[1]  # top offset for proper vertical alignment
-        word_data.append((w, w_width, w_height, y_offset))
+        word_data.append((w, w_width, w_height))
 
-    max_height = max(wh for _, _, wh, _ in word_data)
-
-    # The first word gets the red box
-    # Calculate total width
+    max_height = max(wh for _, _, wh in word_data)
     total_text_width = sum(wd[1] for wd in word_data) + space_width * (len(words) - 1)
 
-    # Box padding for the highlighted word
     box_pad_x = 12
     box_pad_y = 8
     box_radius = 10
-
-    # Stroke width for non-highlighted words
     stroke_w = 5
 
-    # Image dimensions - generous to fit everything
     extra = box_pad_x * 2 + stroke_w * 2 + 40
     img_width = int(total_text_width + extra)
     img_height = int(max_height + box_pad_y * 2 + stroke_w * 2 + 30)
@@ -91,14 +152,13 @@ def _render_subtitle_nicktrading(
     img = Image.new("RGBA", (img_width, img_height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    # Start x centered
     x_start = (img_width - total_text_width) / 2
     x = x_start
     y_text = stroke_w + box_pad_y + 5
 
-    for idx, (word, w_width, w_height, y_off) in enumerate(word_data):
-        # First word gets the red box
-        if idx == 0:
+    for idx, (word, w_width, w_height) in enumerate(word_data):
+        # Highlighted keyword gets the red box
+        if idx == highlight_idx:
             # Draw red rounded rectangle
             rx1 = x - box_pad_x
             ry1 = y_text - box_pad_y + 2
@@ -130,39 +190,57 @@ def _render_subtitle_nicktrading(
 
 
 def _create_subtitle_clips(
-    script: str,
+    audio_path: Path,
     video_duration: float,
     video_size: tuple[int, int],
     config: EditorConfig,
 ) -> list[ImageClip]:
-    """Create nicktrading_ exact style subtitle clips."""
+    """Create subtitle clips using Whisper word-level timestamps for perfect sync."""
     sub_config = config.subtitle
-    chunks = _split_script_into_chunks(script, sub_config.words_per_subtitle)
+    words_per_chunk = sub_config.words_per_subtitle
 
-    if not chunks:
+    # Get word-level timestamps from audio
+    timed_words = _transcribe_with_timestamps(audio_path, language="it")
+
+    if not timed_words:
+        logger.warning("Nessuna parola trascritta — sottotitoli saltati")
         return []
 
-    duration_per_chunk = video_duration / len(chunks)
-    clips = []
+    # Group words into chunks
+    chunks = []
+    for i in range(0, len(timed_words), words_per_chunk):
+        chunk_words = timed_words[i : i + words_per_chunk]
+        if not chunk_words:
+            continue
+        text = " ".join(w["text"] for w in chunk_words)
+        start = chunk_words[0]["start"]
+        end = chunk_words[-1]["end"]
+        # Pick keyword index within this chunk
+        keyword_idx = _pick_keyword([w["text"] for w in chunk_words])
+        chunks.append({
+            "text": text,
+            "start": start,
+            "end": end,
+            "keyword_idx": keyword_idx,
+        })
 
-    for i, text in enumerate(chunks):
+    clips = []
+    for chunk in chunks:
         img_array = _render_subtitle_nicktrading(
-            text=text,
-            video_width=video_size[0],
-            video_height=video_size[1],
+            text=chunk["text"],
+            highlight_idx=chunk["keyword_idx"],
             font_path=sub_config.font_path,
             font_size=sub_config.font_size,
         )
 
         clip = ImageClip(img_array, transparent=True)
-        clip = clip.with_duration(duration_per_chunk)
-        clip = clip.with_start(i * duration_per_chunk)
-        # Position: center of screen, slightly below middle (like nicktrading_ ~60%)
+        clip = clip.with_start(chunk["start"])
+        clip = clip.with_duration(chunk["end"] - chunk["start"] + 0.05)
         clip = clip.with_position(("center", 0.58), relative=True)
 
         clips.append(clip)
 
-    logger.info("Creati %d sottotitoli nicktrading_ (%.2fs ciascuno)", len(clips), duration_per_chunk)
+    logger.info("Creati %d sottotitoli con timing reale Whisper", len(clips))
     return clips
 
 
@@ -294,7 +372,7 @@ def edit_video(
     base = _auto_zoom_vertical(base)
 
     subtitle_clips = _create_subtitle_clips(
-        script, base.duration, tuple(base.size), config
+        avatar_video_path, base.duration, tuple(base.size), config
     )
 
     lower_third = _add_lower_third(config, base.duration)
