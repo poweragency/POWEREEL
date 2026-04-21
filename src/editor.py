@@ -107,20 +107,34 @@ def _split_script_into_chunks(script: str, words_per_chunk: int) -> list[str]:
     return chunks
 
 
+def _hex_to_rgba(hex_color: str, alpha: int = 255) -> tuple:
+    """Convert #RRGGBB to (r, g, b, a)."""
+    h = hex_color.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), alpha)
+
+
 def _render_subtitle_nicktrading(
     text: str,
     highlight_idx: int,
     font_path: str,
     font_size: int,
+    font_color: str = "#FFFFFF",
+    accent_color: str = "#E8163C",
+    stroke_color: str = "#000000",
+    stroke_width: int = 5,
+    highlight_style: str = "box",  # "box", "color", or "none"
+    uppercase: bool = True,
+    emoji: str = "",
     max_line_width: int = 900,
 ) -> np.ndarray:
-    """Render nicktrading_ style subtitle with auto line-wrap on long phrases."""
+    """Render subtitle with configurable style: box highlight, color highlight, or no highlight.
+    Optional emoji rendered above the text."""
     try:
         font = ImageFont.truetype(font_path, font_size)
     except Exception:
         font = ImageFont.load_default()
 
-    words = text.upper().split()
+    words = (text.upper() if uppercase else text).split()
     if not words:
         return np.zeros((10, 10, 4), dtype=np.uint8)
 
@@ -128,6 +142,9 @@ def _render_subtitle_nicktrading(
         highlight_idx = 0
 
     space_width = font.getlength(" ")
+    text_rgba = _hex_to_rgba(font_color)
+    accent_rgba = _hex_to_rgba(accent_color)
+    stroke_rgba = _hex_to_rgba(stroke_color)
 
     # Measure each word
     word_data = []
@@ -139,8 +156,8 @@ def _render_subtitle_nicktrading(
 
     max_height = max(wh for _, _, wh in word_data)
 
-    # Wrap into lines so each line stays within max_line_width
-    lines = []  # each line: list of (idx, word, w_width, w_height)
+    # Wrap into lines
+    lines = []
     current_line = []
     current_width = 0
     for idx, (word, w_width, w_height) in enumerate(word_data):
@@ -158,13 +175,37 @@ def _render_subtitle_nicktrading(
     box_pad_x = 12
     box_pad_y = 8
     box_radius = 10
-    stroke_w = 5
+    stroke_w = stroke_width
     line_gap = 18
+
+    # Emoji rendered above (use bigger system font for emoji rendering)
+    emoji_height = 0
+    emoji_font = None
+    if emoji:
+        emoji_size = int(font_size * 1.3)
+        emoji_height = emoji_size + 20
+        # Try common emoji fonts
+        for emoji_font_path in [
+            "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+            "C:/Windows/Fonts/seguiemj.ttf",
+            "/System/Library/Fonts/Apple Color Emoji.ttc",
+        ]:
+            try:
+                emoji_font = ImageFont.truetype(emoji_font_path, emoji_size)
+                break
+            except Exception:
+                continue
+        if emoji_font is None:
+            try:
+                emoji_font = ImageFont.truetype(font_path, emoji_size)
+            except Exception:
+                emoji_font = font
 
     extra_w = box_pad_x * 2 + stroke_w * 2 + 40
     img_width = int(max_line_width + extra_w)
     img_height = int(
-        len(lines) * max_height
+        emoji_height
+        + len(lines) * max_height
         + (len(lines) - 1) * line_gap
         + box_pad_y * 2 + stroke_w * 2 + 30
     )
@@ -174,13 +215,26 @@ def _render_subtitle_nicktrading(
 
     y_text = stroke_w + box_pad_y + 5
 
+    # Render emoji above the text, centered
+    if emoji and emoji_font is not None:
+        try:
+            ebbox = draw.textbbox((0, 0), emoji, font=emoji_font, embedded_color=True)
+            ew = ebbox[2] - ebbox[0]
+            ex = (img_width - ew) / 2
+            draw.text((ex, y_text), emoji, font=emoji_font, embedded_color=True)
+        except Exception:
+            pass
+        y_text += emoji_height
+
     for line in lines:
-        # Compute line width for centering
         line_text_width = sum(ww for _, _, ww, _ in line) + space_width * (len(line) - 1)
         x = (img_width - line_text_width) / 2
 
         for idx, word, w_width, w_height in line:
-            if idx == highlight_idx:
+            is_highlighted = (idx == highlight_idx) and highlight_style != "none"
+
+            if is_highlighted and highlight_style == "box":
+                # Box behind word
                 rx1 = x - box_pad_x
                 ry1 = y_text - box_pad_y + 2
                 rx2 = x + w_width + box_pad_x
@@ -188,18 +242,21 @@ def _render_subtitle_nicktrading(
                 draw.rounded_rectangle(
                     [rx1, ry1, rx2, ry2],
                     radius=box_radius,
-                    fill=(232, 22, 60, 255),
+                    fill=accent_rgba,
                 )
-                draw.text((x, y_text), word, font=font, fill=(255, 255, 255, 255))
+                draw.text((x, y_text), word, font=font, fill=text_rgba)
             else:
+                # Color: highlighted word in accent_color, others in font_color
+                fill_color = accent_rgba if is_highlighted else text_rgba
+                # Stroke
                 for dx in range(-stroke_w, stroke_w + 1):
                     for dy in range(-stroke_w, stroke_w + 1):
                         if dx * dx + dy * dy <= stroke_w * stroke_w:
                             draw.text(
                                 (x + dx, y_text + dy), word, font=font,
-                                fill=(0, 0, 0, 255),
+                                fill=stroke_rgba,
                             )
-                draw.text((x, y_text), word, font=font, fill=(255, 255, 255, 255))
+                draw.text((x, y_text), word, font=font, fill=fill_color)
 
             x += w_width + space_width
 
@@ -234,6 +291,16 @@ def _create_subtitle_clips(
     clips = []
     total_renders = 0
 
+    # Optional emoji finder
+    add_emoji = getattr(sub_config, "add_emoji", False)
+    highlight_style = getattr(sub_config, "highlight_style", "box")
+    uppercase = getattr(sub_config, "uppercase", True)
+
+    if add_emoji:
+        from .subtitle_presets import find_emoji
+    else:
+        find_emoji = lambda _t: ""
+
     # Group consecutive words into phrases
     for phrase_start_idx in range(0, n, phrase_size):
         phrase_end_idx = min(n, phrase_start_idx + phrase_size)
@@ -242,6 +309,7 @@ def _create_subtitle_clips(
             continue
 
         text = " ".join(w["text"] for w in phrase_words)
+        phrase_emoji = find_emoji(text) if add_emoji else ""
 
         # For each word in the phrase, render a clip with that word highlighted
         for local_idx, word in enumerate(phrase_words):
@@ -252,6 +320,13 @@ def _create_subtitle_clips(
                 highlight_idx=local_idx,
                 font_path=sub_config.font_path,
                 font_size=sub_config.font_size,
+                font_color=sub_config.font_color,
+                accent_color=sub_config.accent_color,
+                stroke_color=sub_config.stroke_color,
+                stroke_width=sub_config.stroke_width,
+                highlight_style=highlight_style,
+                uppercase=uppercase,
+                emoji=phrase_emoji,
             )
 
             clip = ImageClip(img_array, transparent=True)

@@ -514,63 +514,136 @@ elif st.session_state.step == 4:
 
 elif st.session_state.step == 5:
     st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[5]}</h1>', unsafe_allow_html=True)
+    st.caption("Scegli un preset o personalizza completamente lo stile dei sottotitoli")
 
-    current_source = settings["heygen"].get("subtitle_source", "custom")
+    from src.subtitle_presets import PRESETS
 
-    col_h, col_c = st.columns(2)
-    with col_h:
-        is_heygen = current_source == "heygen"
-        border_h = "3px solid #E8163C" if is_heygen else "1px solid #444"
-        st.markdown(
-            f'<div style="border:{border_h}; border-radius:12px; padding:10px; text-align:center;">'
-            f'<h4>HeyGen integrati</h4>'
-            f'<p style="font-size:13px; color:#aaa;">Sottotitoli classici di HeyGen, bianchi in basso</p></div>',
-            unsafe_allow_html=True,
-        )
-        hp = PROJECT_ROOT / "assets" / "templates" / "heygen_caption_preview.png"
-        if hp.exists():
-            st.image(str(hp), use_container_width=True)
-        if st.button("✅ Attivo" if is_heygen else "Usa HeyGen", key="src_h",
-                     use_container_width=True, disabled=is_heygen):
-            settings["heygen"]["subtitle_source"] = "heygen"
-            settings["heygen"]["caption"] = True
-            save_settings(settings)
-            st.rerun()
+    current_preset = settings["editor"]["subtitle"].get("preset", "classic")
 
-    with col_c:
-        is_custom = current_source == "custom"
-        border_c = "3px solid #E8163C" if is_custom else "1px solid #444"
-        st.markdown(
-            f'<div style="border:{border_c}; border-radius:12px; padding:10px; text-align:center;">'
-            f'<h4>Custom (nicktrading_)</h4>'
-            f'<p style="font-size:13px; color:#aaa;">Box rosso sulla parola chiave, sync Whisper</p></div>',
-            unsafe_allow_html=True,
-        )
-        cp = PROJECT_ROOT / "assets" / "templates" / "custom_caption_preview.png"
-        if cp.exists():
-            st.image(str(cp), use_container_width=True)
-        if st.button("✅ Attivo" if is_custom else "Usa Custom", key="src_c",
-                     use_container_width=True, disabled=is_custom):
-            settings["heygen"]["subtitle_source"] = "custom"
-            settings["heygen"]["caption"] = False
-            save_settings(settings)
-            st.rerun()
+    # ── PRESET CARDS ──
+    st.subheader("📦 Preset disponibili")
 
-    if current_source == "custom":
-        st.divider()
-        st.subheader("Personalizza Custom")
-        sub = settings["editor"]["subtitle"]
-        c1, c2 = st.columns(2)
-        with c1:
-            sub["font_size"] = st.slider("Dimensione font", 30, 120, sub["font_size"])
-            sub["words_per_subtitle"] = st.slider("Parole per frame", 2, 6, sub["words_per_subtitle"])
-        with c2:
-            sub["font_color"] = st.color_picker("Colore testo", sub["font_color"])
-            sub["accent_color"] = st.color_picker("Colore box", sub["accent_color"])
-        settings["editor"]["subtitle"] = sub
-        if st.button("💾 Salva stile", type="secondary"):
-            save_settings(settings)
-            st.success("Salvato")
+    preset_ids = list(PRESETS.keys())
+    cols = st.columns(len(preset_ids))
+
+    for i, pid in enumerate(preset_ids):
+        preset = PRESETS[pid]
+        with cols[i]:
+            is_selected = pid == current_preset
+            border = "3px solid #E8163C" if is_selected else "1px solid #444"
+            badge = "✅ ATTIVO" if is_selected else ""
+
+            st.markdown(
+                f'<div style="border:{border}; border-radius:12px; padding:8px; text-align:center; background:#1a1a2e;">'
+                f'<h4 style="margin:4px 0;">{preset["name"]}</h4>'
+                f'<p style="margin:0 0 6px; font-size:11px; color:#888;">{preset["description"]}</p>'
+                f'<p style="margin:0; color:#E8163C; font-size:11px;">{badge}</p>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+            preview_path = PROJECT_ROOT / "assets" / "templates" / f"preset_{pid}.png"
+            if preview_path.exists():
+                st.image(str(preview_path), use_container_width=True)
+
+            if st.button(
+                "✅ Attivo" if is_selected else "Usa",
+                key=f"preset_{pid}",
+                use_container_width=True,
+                disabled=is_selected,
+            ):
+                # Apply preset settings
+                new_settings = dict(preset["settings"])
+                new_settings["preset"] = pid
+                # Keep position from existing
+                new_settings["position"] = settings["editor"]["subtitle"].get("position", "center")
+                new_settings["max_chars_per_line"] = settings["editor"]["subtitle"].get("max_chars_per_line", 25)
+                settings["editor"]["subtitle"] = new_settings
+                # Caption mode (HeyGen built-in) is OFF when using custom presets
+                settings["heygen"]["subtitle_source"] = "custom"
+                settings["heygen"]["caption"] = False
+                save_settings(settings)
+                st.rerun()
+
+    st.divider()
+
+    # ── ALTERNATIVE: HeyGen built-in ──
+    with st.expander("⚙️ Oppure usa i sottotitoli integrati di HeyGen"):
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            hp = PROJECT_ROOT / "assets" / "templates" / "heygen_caption_preview.png"
+            if hp.exists():
+                st.image(str(hp), width=240)
+            st.caption("Sottotitoli generati direttamente da HeyGen, stile classico bianco in basso")
+        with col2:
+            using_heygen = settings["heygen"].get("subtitle_source") == "heygen"
+            if using_heygen:
+                st.success("✅ HeyGen attivo")
+                if st.button("Torna ai preset Custom", use_container_width=True):
+                    settings["heygen"]["subtitle_source"] = "custom"
+                    settings["heygen"]["caption"] = False
+                    save_settings(settings)
+                    st.rerun()
+            else:
+                if st.button("Usa HeyGen", use_container_width=True):
+                    settings["heygen"]["subtitle_source"] = "heygen"
+                    settings["heygen"]["caption"] = True
+                    save_settings(settings)
+                    st.rerun()
+
+    st.divider()
+
+    # ── CUSTOMIZATION (only if Custom preset is active) ──
+    if settings["heygen"].get("subtitle_source", "custom") == "custom":
+        with st.expander("🎨 Personalizzazione avanzata", expanded=False):
+            sub = settings["editor"]["subtitle"]
+
+            font_options = {
+                "Bebas Neue (condensed bold)": "./assets/fonts/BebasNeue-Regular.ttf",
+                "Montserrat Bold": "./assets/fonts/Montserrat-Bold.ttf",
+            }
+            current_font = next(
+                (k for k, v in font_options.items() if v == sub.get("font_path")),
+                list(font_options.keys())[0],
+            )
+            chosen_font = st.selectbox(
+                "Font", list(font_options.keys()),
+                index=list(font_options.keys()).index(current_font),
+            )
+            sub["font_path"] = font_options[chosen_font]
+
+            c1, c2 = st.columns(2)
+            with c1:
+                sub["font_size"] = st.slider("Dimensione testo", 30, 130, sub.get("font_size", 90))
+                sub["words_per_subtitle"] = st.slider("Parole per frase", 2, 6, sub.get("words_per_subtitle", 3))
+                sub["stroke_width"] = st.slider("Spessore bordo", 1, 10, sub.get("stroke_width", 5))
+                sub["uppercase"] = st.toggle("TUTTO MAIUSCOLO", sub.get("uppercase", True))
+                sub["add_emoji"] = st.toggle("Aggiungi emoji contestuale", sub.get("add_emoji", False))
+            with c2:
+                sub["font_color"] = st.color_picker("Colore testo", sub.get("font_color", "#FFFFFF"))
+                sub["accent_color"] = st.color_picker("Colore evidenziazione", sub.get("accent_color", "#E8163C"))
+                sub["stroke_color"] = st.color_picker("Colore bordo", sub.get("stroke_color", "#000000"))
+
+                hl_options = {
+                    "Box colorato dietro la parola": "box",
+                    "Solo cambio colore parola": "color",
+                    "Nessuna evidenziazione": "none",
+                }
+                current_hl = next(
+                    (k for k, v in hl_options.items() if v == sub.get("highlight_style", "box")),
+                    list(hl_options.keys())[0],
+                )
+                chosen_hl = st.selectbox(
+                    "Tipo evidenziazione", list(hl_options.keys()),
+                    index=list(hl_options.keys()).index(current_hl),
+                )
+                sub["highlight_style"] = hl_options[chosen_hl]
+
+            settings["editor"]["subtitle"] = sub
+
+            if st.button("💾 Salva personalizzazione", type="primary"):
+                save_settings(settings)
+                st.success("✅ Salvato — il prossimo reel userà questo stile")
 
     st.divider()
     nav_buttons(5, True)

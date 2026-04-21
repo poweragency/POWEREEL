@@ -62,16 +62,19 @@ class HeyGenConfig(BaseModel):
 
 
 class SubtitleConfig(BaseModel):
-    font_path: str = "./assets/fonts/Montserrat-Bold.ttf"
-    font_size: int = 58
+    font_path: str = "./assets/fonts/BebasNeue-Regular.ttf"
+    font_size: int = 90
     font_color: str = "#FFFFFF"
-    accent_color: str = "#FF0000"
+    accent_color: str = "#E8163C"
     stroke_color: str = "#000000"
-    stroke_width: int = 4
-    position: str = "bottom"
+    stroke_width: int = 5
+    position: str = "center"
     max_chars_per_line: int = 25
     words_per_subtitle: int = 3
     uppercase: bool = True
+    add_emoji: bool = False
+    highlight_style: str = "box"  # "box", "color", or "none"
+    preset: str = "classic"
 
 
 class BackgroundMusicConfig(BaseModel):
