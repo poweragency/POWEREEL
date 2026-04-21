@@ -977,18 +977,39 @@ elif st.session_state.step == 7:
             st.text_area("Script generato (selezionalo e copia con Ctrl+C)",
                          script_text, height=180, key="script_display")
 
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown(
-                    f'<a href="https://app.heygen.com/create-video" target="_blank" '
-                    f'style="display:block; padding:12px; background:#E8163C; color:white; '
-                    f'text-align:center; border-radius:8px; text-decoration:none; font-weight:bold;">'
-                    f'🚀 Apri HeyGen.com</a>',
-                    unsafe_allow_html=True,
-                )
-            with c2:
-                st.caption(f"**Avatar da usare:** `{settings['heygen']['avatar_id'][:16]}...`")
-                st.caption(f"**Voce da usare:** `{settings['heygen']['voice_id'][:16]}...`")
+            st.markdown(
+                '<a href="https://app.heygen.com" target="_blank" rel="noopener noreferrer" '
+                'style="display:block; padding:14px; background:#E8163C; color:white; '
+                'text-align:center; border-radius:8px; text-decoration:none; font-weight:bold; '
+                'font-size:16px;">🚀 Apri HeyGen Dashboard</a>',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "Una volta aperta HeyGen, vai su **Avatar** o **Quick Create**, "
+                "seleziona l'avatar/look e incolla lo script qui sopra."
+            )
+
+            # Show user which avatar/voice to use - find the friendly name
+            current_avatar_id = settings["heygen"]["avatar_id"]
+            avatar_name = "?"
+            look_name = "?"
+            for gname, looks in data["looks"].items():
+                for look in looks:
+                    if look["look_id"] == current_avatar_id:
+                        avatar_name = gname
+                        look_name = look["name"]
+                        break
+            voice_name = "?"
+            for v in data["voices"]:
+                if v["voice_id"] == settings["heygen"]["voice_id"]:
+                    voice_name = f"{v['name']} ({v['language']})"
+                    break
+
+            st.info(
+                f"📌 **Su HeyGen seleziona:**\n\n"
+                f"- **Avatar:** {avatar_name} → look **{look_name}**\n"
+                f"- **Voce:** {voice_name}"
+            )
 
             st.divider()
             st.markdown("### 3️⃣ Carica il video MP4 scaricato da HeyGen")
