@@ -22,9 +22,17 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Disable browser auto-translation
+# Disable browser auto-translation everywhere
 st.markdown(
-    '<meta name="google" content="notranslate">',
+    """
+    <meta name="google" content="notranslate">
+    <style>html, body { translate: no !important; }</style>
+    <script>
+        document.documentElement.setAttribute('translate', 'no');
+        document.documentElement.setAttribute('lang', 'it');
+        document.body.setAttribute('translate', 'no');
+    </script>
+    """,
     unsafe_allow_html=True,
 )
 
@@ -328,7 +336,7 @@ def nav_buttons(current_step: int, can_proceed: bool, next_label: str = "Avanti 
 # ── STEP 1: Avatar & Look ────────────────────────────────────────────────────
 
 if st.session_state.step == 1:
-    st.title(STEP_TITLES[1])
+    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[1]}</h1>', unsafe_allow_html=True)
     st.caption("Scegli quale dei tuoi avatar usare e quale look (outfit/scenario)")
 
     groups = data["groups"]
@@ -392,7 +400,7 @@ if st.session_state.step == 1:
 # ── STEP 2: Voce ─────────────────────────────────────────────────────────────
 
 elif st.session_state.step == 2:
-    st.title(STEP_TITLES[2])
+    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[2]}</h1>', unsafe_allow_html=True)
     st.caption("Scegli quale voce clonata usare")
 
     voices = data["voices"]
@@ -424,7 +432,7 @@ elif st.session_state.step == 2:
 # ── STEP 3: Fonti Notizie ────────────────────────────────────────────────────
 
 elif st.session_state.step == 3:
-    st.title(STEP_TITLES[3])
+    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[3]}</h1>', unsafe_allow_html=True)
     st.caption("I siti RSS da cui prendere le notizie per generare lo script")
 
     feeds = settings["scraper"]["feeds"]
@@ -474,7 +482,7 @@ elif st.session_state.step == 3:
 # ── STEP 4: Script & Tono ────────────────────────────────────────────────────
 
 elif st.session_state.step == 4:
-    st.title(STEP_TITLES[4])
+    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[4]}</h1>', unsafe_allow_html=True)
     st.caption("Come Claude scrive lo script del reel")
 
     col1, col2 = st.columns(2)
@@ -505,7 +513,7 @@ elif st.session_state.step == 4:
 # ── STEP 5: Stile Sottotitoli ────────────────────────────────────────────────
 
 elif st.session_state.step == 5:
-    st.title(STEP_TITLES[5])
+    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[5]}</h1>', unsafe_allow_html=True)
 
     current_source = settings["heygen"].get("subtitle_source", "custom")
 
@@ -571,7 +579,7 @@ elif st.session_state.step == 5:
 # ── STEP 6: Instagram ────────────────────────────────────────────────────────
 
 elif st.session_state.step == 6:
-    st.title(STEP_TITLES[6])
+    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[6]}</h1>', unsafe_allow_html=True)
     st.caption("Caption, hashtag e impostazioni di pubblicazione")
 
     settings["publisher"]["caption_template"] = st.text_area(
@@ -598,7 +606,7 @@ elif st.session_state.step == 6:
 # ── STEP 7: Genera & Pubblica ────────────────────────────────────────────────
 
 elif st.session_state.step == 7:
-    st.title(STEP_TITLES[7])
+    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[7]}</h1>', unsafe_allow_html=True)
     st.caption("Genera il reel e pubblicalo su Instagram")
 
     today = date.today().isoformat()
