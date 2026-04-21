@@ -195,14 +195,14 @@ def _create_subtitle_clips(
     video_size: tuple[int, int],
     config: EditorConfig,
 ) -> list[ImageClip]:
-    """Karaoke-style subtitles: highlight moves word-by-word in perfect sync.
+    """Karaoke-style: phrase stays on screen, red highlight moves word-by-word.
 
-    For each spoken word, render a frame showing N words (a phrase window)
-    with the currently-spoken word highlighted in red. The clip is shown
-    for exactly the duration that word is being spoken.
+    Words are grouped into phrases (~6 words). Each phrase stays displayed
+    for its full duration. Within each phrase, a frame is rendered for every
+    spoken word with the highlight moving to that word in perfect sync.
     """
     sub_config = config.subtitle
-    window_size = sub_config.words_per_subtitle  # how many words shown together
+    phrase_size = max(4, sub_config.words_per_subtitle * 2)  # phrase length
 
     # Get word-level timestamps from audio
     timed_words = _transcribe_with_timestamps(audio_path, language="it")
@@ -213,42 +213,45 @@ def _create_subtitle_clips(
 
     n = len(timed_words)
     clips = []
+    total_renders = 0
 
-    for i, word in enumerate(timed_words):
-        # Define the phrase window: try to keep the spoken word centered
-        # but don't go out of bounds
-        offset = window_size // 2
-        win_start = max(0, i - offset)
-        win_end = min(n, win_start + window_size)
-        # If we hit the end, slide the window back to keep size = window_size
-        if win_end - win_start < window_size:
-            win_start = max(0, win_end - window_size)
+    # Group consecutive words into phrases
+    for phrase_start_idx in range(0, n, phrase_size):
+        phrase_end_idx = min(n, phrase_start_idx + phrase_size)
+        phrase_words = timed_words[phrase_start_idx:phrase_end_idx]
+        if not phrase_words:
+            continue
 
-        window_words = timed_words[win_start:win_end]
-        text = " ".join(w["text"] for w in window_words)
-        # Index of the currently-spoken word within the window
-        highlight_idx = i - win_start
+        text = " ".join(w["text"] for w in phrase_words)
 
-        img_array = _render_subtitle_nicktrading(
-            text=text,
-            highlight_idx=highlight_idx,
-            font_path=sub_config.font_path,
-            font_size=sub_config.font_size,
-        )
+        # For each word in the phrase, render a clip with that word highlighted
+        for local_idx, word in enumerate(phrase_words):
+            global_idx = phrase_start_idx + local_idx
 
-        clip = ImageClip(img_array, transparent=True)
-        clip = clip.with_start(word["start"])
-        # Duration = until the next word starts (no gap, no overlap)
-        if i + 1 < n:
-            duration = timed_words[i + 1]["start"] - word["start"]
-        else:
-            duration = max(0.1, word["end"] - word["start"] + 0.2)
-        clip = clip.with_duration(max(0.05, duration))
-        clip = clip.with_position(("center", 0.58), relative=True)
+            img_array = _render_subtitle_nicktrading(
+                text=text,
+                highlight_idx=local_idx,
+                font_path=sub_config.font_path,
+                font_size=sub_config.font_size,
+            )
 
-        clips.append(clip)
+            clip = ImageClip(img_array, transparent=True)
+            clip = clip.with_start(word["start"])
+            # Duration = until next word starts (or end of phrase if last word)
+            if global_idx + 1 < n:
+                duration = timed_words[global_idx + 1]["start"] - word["start"]
+            else:
+                duration = max(0.1, word["end"] - word["start"] + 0.2)
+            clip = clip.with_duration(max(0.05, duration))
+            clip = clip.with_position(("center", 0.58), relative=True)
 
-    logger.info("Creati %d sottotitoli karaoke (un clip per parola, sync esatto)", len(clips))
+            clips.append(clip)
+            total_renders += 1
+
+    logger.info(
+        "Creati %d frame karaoke su %d frasi (testo fermo, rosso che segue voce)",
+        total_renders, (n + phrase_size - 1) // phrase_size,
+    )
     return clips
 
 
