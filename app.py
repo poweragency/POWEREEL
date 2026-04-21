@@ -1013,12 +1013,45 @@ elif st.session_state.step == 7:
 
             st.divider()
             st.markdown("### 3️⃣ Carica il video MP4 scaricato da HeyGen")
-            uploaded = st.file_uploader("Trascina qui il file MP4", type=["mp4", "mov"])
 
-            if uploaded is not None:
-                # Save to avatar_raw.mp4
-                avatar_raw_path.write_bytes(uploaded.read())
-                st.success(f"✅ Video caricato ({avatar_raw_path.stat().st_size / 1024 / 1024:.1f} MB)")
+            tab1, tab2 = st.tabs(["📁 Upload file", "🔗 Incolla URL (consigliato per file grandi)"])
+
+            with tab1:
+                uploaded = st.file_uploader("Trascina qui il file MP4", type=["mp4", "mov"])
+                if uploaded is not None:
+                    try:
+                        avatar_raw_path.parent.mkdir(parents=True, exist_ok=True)
+                        avatar_raw_path.write_bytes(uploaded.read())
+                        st.success(f"✅ Video caricato ({avatar_raw_path.stat().st_size / 1024 / 1024:.1f} MB)")
+                    except Exception as e:
+                        st.error(f"Errore upload: {e}")
+
+            with tab2:
+                st.caption(
+                    "Su HeyGen, dopo aver generato il video, **clicca destro sul bottone Download** "
+                    "e seleziona **'Copia indirizzo link'**. Poi incollalo qui sotto."
+                )
+                video_url = st.text_input("URL del video MP4", key="video_url_input")
+                if st.button("⬇️ Scarica video da URL", type="primary"):
+                    if video_url:
+                        try:
+                            import httpx as _httpx
+                            with st.spinner("Download in corso..."):
+                                avatar_raw_path.parent.mkdir(parents=True, exist_ok=True)
+                                with _httpx.stream("GET", video_url, timeout=180,
+                                                    follow_redirects=True) as resp:
+                                    resp.raise_for_status()
+                                    with open(avatar_raw_path, "wb") as f:
+                                        for chunk in resp.iter_bytes(chunk_size=65536):
+                                            f.write(chunk)
+                            st.success(f"✅ Scaricato ({avatar_raw_path.stat().st_size / 1024 / 1024:.1f} MB)")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Errore download: {e}")
+                    else:
+                        st.warning("Incolla un URL valido")
+
+            if avatar_raw_path.exists():
                 st.video(str(avatar_raw_path))
 
             if avatar_raw_path.exists():

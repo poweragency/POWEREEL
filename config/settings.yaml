@@ -58,18 +58,23 @@ heygen:
   background_value: '#000000'
   poll_interval_seconds: 15
   poll_max_attempts: 40
+  subtitle_source: custom
+  caption: false
 editor:
   subtitle:
     font_path: ./assets/fonts/BebasNeue-Regular.ttf
     font_size: 90
     font_color: '#FFFFFF'
-    accent_color: '#e87416'
+    accent_color: '#E8163C'
     stroke_color: '#000000'
     stroke_width: 5
-    position: center
-    max_chars_per_line: 25
     words_per_subtitle: 3
     uppercase: true
+    add_emoji: true
+    highlight_style: box
+    preset: with_emoji
+    position: center
+    max_chars_per_line: 25
   background_music:
     path: ./assets/music/default_bg.mp3
     volume: 0.08
@@ -94,3 +99,4 @@ publisher:
 
     '
   max_hashtags: 30
+generation_mode: manual
