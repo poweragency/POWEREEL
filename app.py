@@ -847,68 +847,216 @@ elif st.session_state.step == 7:
     st.caption("Genera il reel e pubblicalo su Instagram")
 
     today = date.today().isoformat()
-    final_path = PROJECT_ROOT / "output" / today / "final.mp4"
-    script_path = PROJECT_ROOT / "output" / today / "script.txt"
+    run_dir = PROJECT_ROOT / "output" / today
+    final_path = run_dir / "final.mp4"
+    script_path = run_dir / "script.txt"
+    avatar_raw_path = run_dir / "avatar_raw.mp4"
 
-    # Recap
+    # ── MODE TOGGLE ──
+    st.subheader("⚙️ Modalità di generazione")
+    mode_col1, mode_col2 = st.columns(2)
+
+    current_mode = settings.get("generation_mode", "api")
+
+    with mode_col1:
+        is_api = current_mode == "api"
+        border = "3px solid #E8163C" if is_api else "1px solid #444"
+        st.markdown(
+            f'<div style="border:{border}; border-radius:12px; padding:12px;">'
+            f'<h4 style="margin:0;">🤖 Pieno Automatico (API)</h4>'
+            f'<p style="margin:4px 0; font-size:13px; color:#aaa;">'
+            f'Tutto in 1 click. POWEREEL chiama HeyGen API. <b>Costo: ~$3 a video</b>'
+            f'</p></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("✅ Attivo" if is_api else "Usa modalità API", key="m_api",
+                     use_container_width=True, disabled=is_api):
+            settings["generation_mode"] = "api"
+            save_settings(settings)
+            st.rerun()
+
+    with mode_col2:
+        is_manual = current_mode == "manual"
+        border = "3px solid #E8163C" if is_manual else "1px solid #444"
+        st.markdown(
+            f'<div style="border:{border}; border-radius:12px; padding:12px;">'
+            f'<h4 style="margin:0;">✋ Semi-Manuale (HeyGen Dashboard)</h4>'
+            f'<p style="margin:4px 0; font-size:13px; color:#aaa;">'
+            f'3 click in più: generi avatar su HeyGen.com (crediti del piano). <b>Costo: $0</b>'
+            f'</p></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("✅ Attivo" if is_manual else "Usa modalità Manuale", key="m_man",
+                     use_container_width=True, disabled=is_manual):
+            settings["generation_mode"] = "manual"
+            save_settings(settings)
+            st.rerun()
+
+    st.divider()
+
     with st.expander("📋 Riepilogo configurazione", expanded=False):
         st.write(f"**Avatar/Look:** `{settings['heygen']['avatar_id'][:16]}...`")
         st.write(f"**Voce:** `{settings['heygen']['voice_id'][:16]}...`")
         st.write(f"**Feed:** {len(settings['scraper']['feeds'])} attivi")
         st.write(f"**Durata:** {settings['scriptwriter']['target_duration_seconds']}s")
-        st.write(f"**Sottotitoli:** {settings['heygen'].get('subtitle_source', 'custom')}")
+        st.write(f"**Preset sottotitoli:** {settings['editor']['subtitle'].get('preset', 'classic')}")
 
     st.divider()
 
-    # Generation
-    running = is_generation_running()
-    if running:
-        elapsed = int(time.time() - get_generation_started_at())
-        st.info(f"⏳ Generazione in corso... ({elapsed}s) — può impiegare 5-8 minuti")
-        st.progress(min(elapsed / 480, 0.95))
+    # ── MODE: API (full automatic) ──
+    if current_mode == "api":
+        st.subheader("▶️ Genera reel automatico")
 
-        log_path = PROJECT_ROOT / "logs" / "wizard_run.log"
-        if log_path.exists():
-            with st.expander("📜 Log live", expanded=True):
-                lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-                st.code("\n".join(lines[-20:]))
+        running = is_generation_running()
+        if running:
+            elapsed = int(time.time() - get_generation_started_at())
+            st.info(f"⏳ Generazione in corso... ({elapsed}s) — può impiegare 5-8 minuti")
+            st.progress(min(elapsed / 480, 0.95))
+            log_path = PROJECT_ROOT / "logs" / "wizard_run.log"
+            if log_path.exists():
+                with st.expander("📜 Log live", expanded=True):
+                    lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                    st.code("\n".join(lines[-20:]))
+            time.sleep(5)
+            st.rerun()
+        else:
+            result = get_generation_result()
+            if result == "ok":
+                st.success("✅ Generazione completata!")
+            elif result and result.startswith("error"):
+                st.error(f"❌ {result}")
 
-        time.sleep(5)
-        st.rerun()
+            col_g, col_v = st.columns(2)
+            with col_g:
+                if st.button("▶️ Genera Reel (anteprima)", type="primary", use_container_width=True):
+                    run_pipeline_background(dry_run=True)
+                    st.rerun()
+            with col_v:
+                if st.button("🔄 Rigenera", use_container_width=True, disabled=not final_path.exists()):
+                    run_pipeline_background(dry_run=True)
+                    st.rerun()
+
+    # ── MODE: MANUAL (semi-manual) ──
     else:
-        result = get_generation_result()
-        if result == "ok":
-            st.success("✅ Generazione completata!")
-        elif result and result.startswith("error"):
-            st.error(f"❌ {result}")
+        st.subheader("✋ Generazione semi-manuale")
+        st.markdown("""
+        **Come funziona:**
+        1. Clicca **"Genera Script"** → POWEREEL crea lo script con Claude
+        2. Copia lo script, vai su HeyGen.com, seleziona l'avatar e incolla lo script
+        3. Clicca **Generate** su HeyGen → aspetta 2 min → scarica il video MP4
+        4. Carica il video MP4 qui sotto
+        5. POWEREEL aggiunge sottotitoli karaoke + tutto il resto
+        6. Pubblica su Instagram
+        """)
 
-        col_g, col_v = st.columns(2)
-        with col_g:
-            if st.button("▶️ Genera Reel (anteprima)", type="primary", use_container_width=True):
-                run_pipeline_background(dry_run=True)
-                st.rerun()
-        with col_v:
-            if st.button("🔄 Rigenera", use_container_width=True, disabled=not final_path.exists()):
-                run_pipeline_background(dry_run=True)
-                st.rerun()
-
-    # Show last result
-    if final_path.exists() and not running:
         st.divider()
-        st.subheader("🎬 Anteprima")
+
+        # Step manual A: Generate script
+        st.markdown("### 1️⃣ Genera lo script")
+        if st.button("📝 Genera Script con Claude", type="primary"):
+            with st.spinner("Sto generando lo script..."):
+                try:
+                    from src.config_loader import load_config
+                    from src.scraper import scrape_news, save_articles
+                    from src.scriptwriter import generate_script, save_script
+
+                    cfg = load_config(check_ffmpeg=False)
+                    run_dir.mkdir(parents=True, exist_ok=True)
+                    articles = scrape_news(cfg.scraper)
+                    save_articles(articles, run_dir)
+                    script = generate_script(articles, cfg.scriptwriter, cfg.anthropic_api_key)
+                    save_script(script, run_dir)
+                    st.success("✅ Script pronto!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Errore: {e}")
 
         if script_path.exists():
-            with st.expander("📝 Script"):
-                st.text(script_path.read_text(encoding="utf-8"))
+            script_text = script_path.read_text(encoding="utf-8")
+            st.markdown("### 2️⃣ Copia lo script e portalo su HeyGen")
+            st.text_area("Script generato (selezionalo e copia con Ctrl+C)",
+                         script_text, height=180, key="script_display")
 
-        # Reel-sized preview (~360px wide, 9:16 ratio)
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown(
+                    f'<a href="https://app.heygen.com/create-video" target="_blank" '
+                    f'style="display:block; padding:12px; background:#E8163C; color:white; '
+                    f'text-align:center; border-radius:8px; text-decoration:none; font-weight:bold;">'
+                    f'🚀 Apri HeyGen.com</a>',
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                st.caption(f"**Avatar da usare:** `{settings['heygen']['avatar_id'][:16]}...`")
+                st.caption(f"**Voce da usare:** `{settings['heygen']['voice_id'][:16]}...`")
+
+            st.divider()
+            st.markdown("### 3️⃣ Carica il video MP4 scaricato da HeyGen")
+            uploaded = st.file_uploader("Trascina qui il file MP4", type=["mp4", "mov"])
+
+            if uploaded is not None:
+                # Save to avatar_raw.mp4
+                avatar_raw_path.write_bytes(uploaded.read())
+                st.success(f"✅ Video caricato ({avatar_raw_path.stat().st_size / 1024 / 1024:.1f} MB)")
+                st.video(str(avatar_raw_path))
+
+            if avatar_raw_path.exists():
+                st.divider()
+                st.markdown("### 4️⃣ Aggiungi sottotitoli karaoke")
+                running = is_generation_running()
+                if running:
+                    elapsed = int(time.time() - get_generation_started_at())
+                    st.info(f"⏳ Editing in corso... ({elapsed}s)")
+                    st.progress(min(elapsed / 300, 0.95))
+                    time.sleep(3)
+                    st.rerun()
+                else:
+                    if st.button("🎨 Avvia editing (sottotitoli + sync)",
+                                 type="primary", use_container_width=True):
+                        # Run only editor stage on the uploaded video
+                        def _editor_only():
+                            log = PROJECT_ROOT / "logs" / "wizard_run.log"
+                            if DONE_MARKER.exists():
+                                DONE_MARKER.unlink()
+                            RUN_MARKER.write_text(str(time.time()))
+                            wrapper = (
+                                "from src.config_loader import load_config\n"
+                                "from src.scriptwriter import load_script\n"
+                                "from src.editor import edit_video\n"
+                                "from pathlib import Path\n"
+                                f"DONE = Path(r'{DONE_MARKER}')\n"
+                                f"LOCK = Path(r'{RUN_MARKER}')\n"
+                                "try:\n"
+                                "    cfg = load_config(check_ffmpeg=False)\n"
+                                f"    rd = Path(r'{run_dir}')\n"
+                                "    script = load_script(rd)\n"
+                                "    edit_video(rd / 'avatar_raw.mp4', script, cfg.editor, rd)\n"
+                                "    DONE.write_text('ok')\n"
+                                "except Exception as e:\n"
+                                "    DONE.write_text(f'error: {e}')\n"
+                                "finally:\n"
+                                "    if LOCK.exists(): LOCK.unlink()\n"
+                            )
+                            with open(log, "w", encoding="utf-8") as logf:
+                                subprocess.run(
+                                    [sys.executable, "-c", wrapper],
+                                    stdout=logf, stderr=subprocess.STDOUT,
+                                    cwd=str(PROJECT_ROOT), timeout=600,
+                                )
+                        threading.Thread(target=_editor_only, daemon=True).start()
+                        st.rerun()
+
+    # ── COMMON: Show last result + publish ──
+    if final_path.exists() and not is_generation_running():
+        st.divider()
+        st.subheader("🎬 Anteprima finale")
+
         col_l, col_v, col_r = st.columns([1, 1, 2])
         with col_v:
             st.video(str(final_path))
 
         st.divider()
         st.subheader("📤 Pubblicazione")
-
         col1, col2 = st.columns(2)
         with col1:
             if st.button("📱 Pubblica su Instagram", type="primary", use_container_width=True):
@@ -920,7 +1068,7 @@ elif st.session_state.step == 7:
                         from src.auth import check_and_refresh_token
 
                         cfg = load_config(check_ffmpeg=False)
-                        articles = load_articles(PROJECT_ROOT / "output" / today)
+                        articles = load_articles(run_dir)
                         token = check_and_refresh_token(
                             cfg.meta_access_token, cfg.meta_app_id, cfg.meta_app_secret
                         )
@@ -930,7 +1078,7 @@ elif st.session_state.step == 7:
                         )
                         st.success(f"✅ Pubblicato! Media ID: {media_id}")
                     except Exception as e:
-                        st.error(f"Errore pubblicazione: {e}")
+                        st.error(f"Errore: {e}")
         with col2:
             st.caption("La pubblicazione carica il video sul tuo account Instagram Business")
 
