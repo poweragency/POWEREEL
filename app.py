@@ -22,87 +22,76 @@ st.set_page_config(
     initial_sidebar_state="collapsed",  # collapsed by default for mobile
 )
 
-# ── Mobile-friendly setup + disable browser auto-translation ────────────────
-st.markdown(
-    """
-    <meta name="google" content="notranslate">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <style>
-    html, body { translate: no !important; }
+# ── Mobile-friendly CSS + disable browser auto-translation ────────────────
+_MOBILE_CSS = """
+<style>
+html, body { translate: no !important; }
 
-    /* ── MOBILE OPTIMIZATIONS ── */
-    @media (max-width: 768px) {
-        /* Reduce main container padding */
-        .block-container {
-            padding-top: 1rem !important;
-            padding-bottom: 1rem !important;
-            padding-left: 0.8rem !important;
-            padding-right: 0.8rem !important;
-            max-width: 100% !important;
-        }
-
-        /* Smaller titles on mobile */
-        h1 { font-size: 1.5rem !important; line-height: 1.3 !important; }
-        h2 { font-size: 1.25rem !important; }
-        h3 { font-size: 1.1rem !important; }
-        h4 { font-size: 1rem !important; }
-
-        /* Bigger touch targets for buttons */
-        .stButton > button {
-            min-height: 48px !important;
-            font-size: 1rem !important;
-            padding: 0.6rem 1rem !important;
-        }
-
-        /* Stack columns vertically on mobile */
-        [data-testid="stHorizontalBlock"] > div {
-            flex: 1 1 100% !important;
-            min-width: 100% !important;
-            margin-bottom: 0.5rem !important;
-        }
-
-        /* Larger inputs for fingers */
-        .stTextInput input,
-        .stTextArea textarea,
-        .stSelectbox > div > div,
-        .stNumberInput input {
-            font-size: 16px !important;  /* prevents iOS zoom on focus */
-            min-height: 44px !important;
-        }
-
-        /* File uploader friendlier on mobile */
-        [data-testid="stFileUploaderDropzone"] {
-            min-height: 100px !important;
-            padding: 1rem !important;
-        }
-
-        /* Hide redundant labels on mobile to save space */
-        .stMetric label { font-size: 0.8rem !important; }
-        .stMetric [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
-
-        /* Sidebar trigger more visible */
-        [data-testid="collapsedControl"] {
-            background: #E8163C !important;
-            border-radius: 50% !important;
-            padding: 8px !important;
-        }
+@media (max-width: 768px) {
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
+        max-width: 100% !important;
     }
-
-    /* Even smaller screens (phones in portrait) */
-    @media (max-width: 480px) {
-        .block-container { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
-        h1 { font-size: 1.3rem !important; }
-        .stImage img { max-height: 200px !important; object-fit: contain !important; }
+    h1 { font-size: 1.5rem !important; line-height: 1.3 !important; }
+    h2 { font-size: 1.25rem !important; }
+    h3 { font-size: 1.1rem !important; }
+    h4 { font-size: 1rem !important; }
+    .stButton > button {
+        min-height: 48px !important;
+        font-size: 1rem !important;
+        padding: 0.6rem 1rem !important;
     }
-    </style>
-    <script>
-        document.documentElement.setAttribute('translate', 'no');
-        document.documentElement.setAttribute('lang', 'it');
-        document.body.setAttribute('translate', 'no');
-    </script>
-    """,
-    unsafe_allow_html=True,
-)
+    [data-testid="stHorizontalBlock"] > div {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+        margin-bottom: 0.5rem !important;
+    }
+    .stTextInput input,
+    .stTextArea textarea,
+    .stSelectbox > div > div,
+    .stNumberInput input {
+        font-size: 16px !important;
+        min-height: 44px !important;
+    }
+    [data-testid="stFileUploaderDropzone"] {
+        min-height: 100px !important;
+        padding: 1rem !important;
+    }
+    .stMetric label { font-size: 0.8rem !important; }
+    .stMetric [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+    [data-testid="collapsedControl"] {
+        background: #E8163C !important;
+        border-radius: 50% !important;
+        padding: 8px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .block-container { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+    h1 { font-size: 1.3rem !important; }
+    .stImage img { max-height: 200px !important; object-fit: contain !important; }
+}
+</style>
+<script>
+document.documentElement.setAttribute('translate', 'no');
+document.documentElement.setAttribute('lang', 'it');
+document.body.setAttribute('translate', 'no');
+// Inject viewport meta into head if missing
+(function() {
+    if (!document.querySelector('meta[name="viewport"][content*="initial-scale"]')) {
+        var m = document.createElement('meta');
+        m.name = 'viewport';
+        m.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+        document.head.appendChild(m);
+    }
+})();
+</script>
+"""
+
+st.markdown(_MOBILE_CSS, unsafe_allow_html=True)
 
 PROJECT_ROOT = Path(__file__).parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
