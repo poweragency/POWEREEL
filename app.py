@@ -108,11 +108,35 @@ try:
     if hasattr(st, "secrets"):
         for key in ["HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
                      "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
-                     "APP_PASSWORD"]:
+                     "APP_PASSWORD", "ADMIN_EMAIL", "ADMIN_PASSWORD"]:
             if key in st.secrets:
                 os.environ[key] = st.secrets[key]
 except Exception:
     pass
+
+
+# ── Multi-tenant: bootstrap admin user ──
+from src import users as _users
+
+_admin_email = os.getenv("ADMIN_EMAIL", "info@poweragency.it")
+_admin_password = os.getenv("ADMIN_PASSWORD") or os.getenv("APP_PASSWORD", "powereel2026")
+_users.ensure_admin_exists(_admin_email, _admin_password)
+
+
+def _apply_user_api_keys(user: dict) -> None:
+    """Inject the logged-in user's API keys into env vars (overrides any default)."""
+    keys = user.get("api_keys", {}) or {}
+    mapping = {
+        "heygen": "HEYGEN_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "meta_access_token": "META_ACCESS_TOKEN",
+        "meta_app_id": "META_APP_ID",
+        "meta_app_secret": "META_APP_SECRET",
+        "instagram_business_account_id": "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+    }
+    for k, env_name in mapping.items():
+        if keys.get(k):
+            os.environ[env_name] = keys[k]
 
 
 # ── Authentication + Landing Page ───────────────────────────────────────────
@@ -249,22 +273,30 @@ def show_landing_and_login() -> bool:
 
     st.divider()
 
-    # ── Login form ──
-    st.markdown("### 🔒 Accedi al pannello")
+    # ── Login form (email + password, multi-tenant) ──
+    st.markdown("### 🔒 Accedi al tuo account")
     cl1, cl2 = st.columns([2, 3])
     with cl1:
-        password = st.text_input("Password", type="password",
-                                  placeholder="Inserisci la password")
-        if st.button("Accedi →", type="primary", use_container_width=True):
-            if password == app_password:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("❌ Password errata")
+        with st.form("login_form", clear_on_submit=False):
+            email = st.text_input("Email", placeholder="tua@email.com")
+            password = st.text_input("Password", type="password",
+                                      placeholder="La tua password")
+            submitted = st.form_submit_button("Accedi →", type="primary", use_container_width=True)
+            if submitted:
+                user = _users.authenticate(email, password)
+                if user:
+                    st.session_state.authenticated = True
+                    st.session_state.user_email = user["email"]
+                    st.session_state.is_admin = user["is_admin"]
+                    _apply_user_api_keys(user)
+                    st.rerun()
+                else:
+                    st.error("❌ Email o password errati")
     with cl2:
         st.info(
-            "Per ottenere l'accesso scrivi a **info@poweragency.it**\n\n"
-            "POWEREEL è in fase di beta privata — accesso solo su invito."
+            "**POWEREEL è in beta privata.**\n\n"
+            "Per ottenere un account scrivi a **info@poweragency.it**\n\n"
+            "Riceverai email e password personali per accedere al tuo pannello dedicato."
         )
 
     return False
@@ -273,13 +305,26 @@ def show_landing_and_login() -> bool:
 def logout():
     """Clear authentication and reset to landing."""
     st.session_state.authenticated = False
+    st.session_state.user_email = None
+    st.session_state.is_admin = False
     st.session_state.step = 1
     st.session_state.view = "wizard"
+    # Clear API key env vars so the next user doesn't inherit them
+    for key in ["HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
+                "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID"]:
+        if key in os.environ:
+            del os.environ[key]
     st.rerun()
 
 
 if not show_landing_and_login():
     st.stop()
+
+# Re-apply current user's API keys on every script run
+if st.session_state.get("user_email"):
+    _curr_user = _users.get_user(st.session_state.user_email)
+    if _curr_user:
+        _apply_user_api_keys(_curr_user)
 
 
 # ── Top bar with logout ──
@@ -540,13 +585,15 @@ render_top_bar()
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 
 st.sidebar.title("⚡ POWEREEL")
-st.sidebar.caption("Wizard step-by-step")
+st.sidebar.caption(f"👤 {st.session_state.get('user_email', 'guest')}")
 
 credits = get_heygen_credits()
 if credits >= 0:
     st.sidebar.metric("Crediti HeyGen API", credits)
     remaining_value = credits * HEYGEN_USD_PER_CREDIT
     st.sidebar.caption(f"≈ ${remaining_value:.2f} rimasti")
+elif credits == -1:
+    st.sidebar.warning("⚠️ HeyGen API non configurata")
 
 st.sidebar.divider()
 
@@ -566,9 +613,25 @@ if st.session_state.view == "wizard":
         goto_step(1)
         st.rerun()
 
-    if st.sidebar.button("💰 Centro Costi (Admin)", use_container_width=True):
+    st.sidebar.divider()
+    st.sidebar.markdown("### Account")
+
+    if st.sidebar.button("🔑 Configura API Keys", use_container_width=True):
+        st.session_state.view = "api_keys"
+        st.rerun()
+
+    if st.sidebar.button("📚 Guida Setup", use_container_width=True):
+        st.session_state.view = "guide"
+        st.rerun()
+
+    if st.sidebar.button("💰 Centro Costi", use_container_width=True):
         st.session_state.view = "costs"
         st.rerun()
+
+    if st.session_state.get("is_admin"):
+        if st.sidebar.button("👥 Admin: Gestisci utenti", use_container_width=True):
+            st.session_state.view = "admin"
+            st.rerun()
 else:
     if st.sidebar.button("← Torna al Wizard", use_container_width=True, type="primary"):
         st.session_state.view = "wizard"
@@ -596,6 +659,254 @@ def nav_buttons(current_step: int, can_proceed: bool, next_label: str = "Avanti 
 
 
 # ── COST CENTER (admin) ─────────────────────────────────────────────────────
+
+# ── API KEYS PAGE ────────────────────────────────────────────────────────────
+
+if st.session_state.view == "api_keys":
+    st.markdown('<h1 translate="no" lang="it">🔑 Configura le tue API Keys</h1>', unsafe_allow_html=True)
+    st.caption("Inserisci le tue chiavi API per HeyGen, Anthropic (Claude) e Meta/Instagram. "
+               "Queste chiavi sono salvate nel tuo profilo e non sono visibili ad altri utenti.")
+
+    user = _users.get_user(st.session_state.user_email)
+    current_keys = user.get("api_keys", {}) if user else {}
+
+    with st.form("api_keys_form"):
+        st.subheader("HeyGen")
+        st.caption("La trovi su [app.heygen.com](https://app.heygen.com) → Settings → API")
+        new_heygen = st.text_input(
+            "HEYGEN_API_KEY",
+            value=current_keys.get("heygen", ""),
+            type="password",
+            placeholder="sk_V2_hgu_...",
+        )
+
+        st.divider()
+        st.subheader("Anthropic (Claude)")
+        st.caption("La trovi su [console.anthropic.com](https://console.anthropic.com) → API Keys")
+        new_anthropic = st.text_input(
+            "ANTHROPIC_API_KEY",
+            value=current_keys.get("anthropic", ""),
+            type="password",
+            placeholder="sk-ant-api03-...",
+        )
+
+        st.divider()
+        st.subheader("Meta / Instagram (opzionale, per pubblicazione automatica)")
+        new_meta_token = st.text_input(
+            "META_ACCESS_TOKEN",
+            value=current_keys.get("meta_access_token", ""),
+            type="password",
+        )
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            new_meta_app_id = st.text_input(
+                "META_APP_ID", value=current_keys.get("meta_app_id", "")
+            )
+            new_ig_id = st.text_input(
+                "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+                value=current_keys.get("instagram_business_account_id", ""),
+            )
+        with col_m2:
+            new_meta_secret = st.text_input(
+                "META_APP_SECRET",
+                value=current_keys.get("meta_app_secret", ""),
+                type="password",
+            )
+
+        if st.form_submit_button("💾 Salva chiavi", type="primary"):
+            _users.update_user_keys(st.session_state.user_email, {
+                "heygen": new_heygen.strip(),
+                "anthropic": new_anthropic.strip(),
+                "meta_access_token": new_meta_token.strip(),
+                "meta_app_id": new_meta_app_id.strip(),
+                "meta_app_secret": new_meta_secret.strip(),
+                "instagram_business_account_id": new_ig_id.strip(),
+            })
+            st.success("✅ Chiavi salvate! Ricarica la pagina per applicarle ovunque.")
+
+    st.divider()
+    st.info("💡 Non sai come ottenere queste chiavi? Vai su **Guida Setup** dalla sidebar.")
+
+    st.stop()
+
+
+# ── GUIDE PAGE ───────────────────────────────────────────────────────────────
+
+if st.session_state.view == "guide":
+    st.markdown('<h1 translate="no" lang="it">📚 Guida Setup POWEREEL</h1>', unsafe_allow_html=True)
+    st.caption("Tutto quello che ti serve per configurare il tuo account in 15 minuti")
+
+    st.markdown("""
+    Per usare POWEREEL ti servono **3 cose principali**:
+    1. Un account **HeyGen** (per generare i video con avatar AI)
+    2. Un account **Anthropic / Claude** (per generare gli script)
+    3. Un account **Instagram Business** + **Meta Developer App** (per pubblicare automaticamente — opzionale)
+
+    Ti guido passo per passo.
+    """)
+
+    # ── HeyGen ──
+    with st.expander("🎭 1. Setup HeyGen — Avatar AI", expanded=True):
+        st.markdown("""
+        **a) Registrati su HeyGen**
+
+        - Vai su [https://www.heygen.com](https://www.heygen.com) e clicca **Sign Up**
+        - Sottoscrivi il **piano Business** ($48-99/mese) — necessario per accesso API e Digital Twin
+
+        **b) Crea il tuo Avatar (Digital Twin)**
+
+        - Una volta dentro, vai su **Avatars** → **Create Avatar** → **Instant Avatar**
+        - Carica un video di te stesso di **almeno 2 minuti** (girato in formato verticale 9:16)
+        - Aspetta 1-2 ore per la creazione (HeyGen ti manda mail quando è pronto)
+
+        **c) Clona la tua Voce**
+
+        - Vai su **Voice** → **Create Voice** → **Instant Voice Clone**
+        - Carica 30-60 secondi di audio della tua voce (chiara, no rumore)
+        - Disponibile in pochi minuti
+
+        **d) Ottieni la tua API Key**
+
+        - Vai su **Settings** → **API** (in basso a sinistra)
+        - Clicca **Create API Key** e copiala (formato `sk_V2_hgu_...`)
+        - **IMPORTANTE:** acquista anche **API credits** separatamente (~$30 per 500 crediti) — sono diversi dai crediti del piano
+
+        **e) Incolla la chiave in POWEREEL**
+
+        - Vai su **🔑 Configura API Keys** nella sidebar e incolla `HEYGEN_API_KEY`
+        """)
+
+    # ── Anthropic ──
+    with st.expander("🤖 2. Setup Anthropic / Claude — Script AI"):
+        st.markdown("""
+        **a) Registrati su Anthropic**
+
+        - Vai su [https://console.anthropic.com](https://console.anthropic.com)
+        - Crea un account con email
+        - Aggiungi un metodo di pagamento (richiesto per usare l'API)
+
+        **b) Aggiungi credito**
+
+        - Vai su **Settings** → **Plans & Billing** → **Add Credits**
+        - Aggiungi **$5-10** (basta per migliaia di script — costo per script: ~$0.006)
+
+        **c) Crea API Key**
+
+        - Vai su **Settings** → **API Keys** → **Create Key**
+        - Dai un nome (es. "POWEREEL") e copia la chiave (formato `sk-ant-api03-...`)
+        - **Salvala subito**: non sarà più visualizzabile dopo
+
+        **d) Incolla la chiave in POWEREEL**
+
+        - Vai su **🔑 Configura API Keys** → incolla `ANTHROPIC_API_KEY`
+        """)
+
+    # ── Instagram ──
+    with st.expander("📱 3. Setup Instagram — Pubblicazione automatica (opzionale)"):
+        st.markdown("""
+        **Prerequisiti:**
+        - Un account **Instagram Business** o **Creator** (non personale)
+        - Una **Pagina Facebook** collegata all'account Instagram
+
+        **a) Converti il tuo account a Business**
+
+        - Su Instagram → **Impostazioni** → **Account** → **Passa ad account aziendale**
+
+        **b) Collega l'account Instagram a una Pagina Facebook**
+
+        - Su Instagram → **Impostazioni** → **Account collegati** → **Facebook** → seleziona la pagina
+
+        **c) Crea una Meta Developer App**
+
+        - Vai su [https://developers.facebook.com](https://developers.facebook.com)
+        - **My Apps** → **Create App** → tipo **Business**
+        - Nel menu sinistro: **Casi d'uso** → cerca **"Gestisci messaggi e contenuti su Instagram"** → **Personalizza**
+
+        **d) Aggiungi i permessi**
+
+        - Aggiungi questi permessi: `instagram_basic`, `instagram_content_publish`, `pages_read_engagement`
+
+        **e) Genera Token + Trova ID**
+
+        - Vai su **Strumenti** → **Graph API Explorer**
+        - Seleziona la tua app, aggiungi i permessi sopra
+        - Clicca **Generate Access Token**
+        - Copia: `META_ACCESS_TOKEN`
+        - In **Settings → Basic** copia: `META_APP_ID` e `META_APP_SECRET`
+        - Per `INSTAGRAM_BUSINESS_ACCOUNT_ID`: usa il Graph Explorer e fai una GET su `me/accounts?fields=instagram_business_account` — l'ID che trovi è quello che ti serve
+
+        **f) Incolla tutto in POWEREEL**
+
+        - Vai su **🔑 Configura API Keys** → incolla i 4 valori Meta/Instagram
+        """)
+
+    st.divider()
+    st.success("Una volta inserite le chiavi, vai al **Wizard** e configura il tuo primo reel!")
+
+    if st.button("🔑 Vai a Configura API Keys", type="primary"):
+        st.session_state.view = "api_keys"
+        st.rerun()
+
+    st.stop()
+
+
+# ── ADMIN PAGE ───────────────────────────────────────────────────────────────
+
+if st.session_state.view == "admin":
+    if not st.session_state.get("is_admin"):
+        st.error("Accesso negato — solo admin")
+        st.stop()
+
+    st.markdown('<h1 translate="no" lang="it">👥 Admin — Gestione Utenti</h1>', unsafe_allow_html=True)
+
+    st.subheader("Crea nuovo utente")
+    with st.form("create_user_form", clear_on_submit=True):
+        c1, c2, c3 = st.columns([3, 2, 1])
+        with c1:
+            new_email = st.text_input("Email", placeholder="cliente@example.com")
+        with c2:
+            new_password = st.text_input("Password", placeholder="min 6 caratteri")
+        with c3:
+            is_admin_new = st.checkbox("Admin")
+        if st.form_submit_button("➕ Crea utente", type="primary"):
+            ok, msg = _users.create_user(new_email, new_password, is_admin=is_admin_new)
+            if ok:
+                st.success(f"✅ {msg}: {new_email}")
+            else:
+                st.error(f"❌ {msg}")
+
+    st.divider()
+    st.subheader("Utenti esistenti")
+    users_list = _users.list_users()
+    if not users_list:
+        st.info("Nessun utente ancora")
+    else:
+        for u in users_list:
+            c1, c2, c3, c4 = st.columns([3, 1, 2, 1])
+            with c1:
+                badge = "👑 admin" if u["is_admin"] else "👤"
+                keys_badge = "🔑" if u["has_keys"] else "⚪"
+                st.write(f"{badge} {keys_badge} **{u['email']}**")
+            with c2:
+                st.caption(u["created_at"][:10])
+            with c3:
+                with st.popover("🔁 Reset password"):
+                    new_pw = st.text_input(
+                        "Nuova password", type="password", key=f"reset_{u['email']}"
+                    )
+                    if st.button("Conferma", key=f"reset_btn_{u['email']}"):
+                        if _users.change_password(u["email"], new_pw):
+                            st.success("Password aggiornata")
+                        else:
+                            st.error("Errore (min 6 caratteri)")
+            with c4:
+                if u["email"] != st.session_state.user_email:
+                    if st.button("🗑️", key=f"del_{u['email']}"):
+                        _users.delete_user(u["email"])
+                        st.rerun()
+
+    st.stop()
+
 
 if st.session_state.view == "costs":
     st.markdown('<h1 translate="no" lang="it">💰 Centro Costi</h1>', unsafe_allow_html=True)
