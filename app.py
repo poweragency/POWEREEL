@@ -122,19 +122,55 @@ _admin_email = os.getenv("ADMIN_EMAIL", "info@poweragency.it")
 _admin_password = os.getenv("ADMIN_PASSWORD") or os.getenv("APP_PASSWORD", "powereel2026")
 _users.ensure_admin_exists(_admin_email, _admin_password)
 
+# One-time: if admin user has no API keys but env has them (legacy/Railway secrets),
+# seed admin's profile with those keys, then strip them from env so they don't leak
+# to other users.
+_admin_user = _users.get_user(_admin_email)
+if _admin_user and not _admin_user.get("api_keys", {}).get("heygen"):
+    _seed_keys = {}
+    for env_name, profile_key in [
+        ("HEYGEN_API_KEY", "heygen"),
+        ("ANTHROPIC_API_KEY", "anthropic"),
+        ("META_ACCESS_TOKEN", "meta_access_token"),
+        ("META_APP_ID", "meta_app_id"),
+        ("META_APP_SECRET", "meta_app_secret"),
+        ("INSTAGRAM_BUSINESS_ACCOUNT_ID", "instagram_business_account_id"),
+    ]:
+        v = os.getenv(env_name)
+        if v:
+            _seed_keys[profile_key] = v
+    if _seed_keys:
+        _users.update_user_keys(_admin_email, _seed_keys)
+
+# CRITICAL: clear env API keys so they're never used as fallback.
+# Each user must provide their own keys via the dashboard.
+for _env in [
+    "HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
+    "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+]:
+    if _env in os.environ:
+        del os.environ[_env]
+
+
+_API_KEY_MAPPING = {
+    "heygen": "HEYGEN_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "meta_access_token": "META_ACCESS_TOKEN",
+    "meta_app_id": "META_APP_ID",
+    "meta_app_secret": "META_APP_SECRET",
+    "instagram_business_account_id": "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+}
+
 
 def _apply_user_api_keys(user: dict) -> None:
-    """Inject the logged-in user's API keys into env vars (overrides any default)."""
+    """Inject ONLY this user's API keys into env vars. Clears all others first."""
+    # Clear all key env vars — strict per-user isolation
+    for env_name in _API_KEY_MAPPING.values():
+        if env_name in os.environ:
+            del os.environ[env_name]
+    # Set only those the user has
     keys = user.get("api_keys", {}) or {}
-    mapping = {
-        "heygen": "HEYGEN_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "meta_access_token": "META_ACCESS_TOKEN",
-        "meta_app_id": "META_APP_ID",
-        "meta_app_secret": "META_APP_SECRET",
-        "instagram_business_account_id": "INSTAGRAM_BUSINESS_ACCOUNT_ID",
-    }
-    for k, env_name in mapping.items():
+    for k, env_name in _API_KEY_MAPPING.items():
         if keys.get(k):
             os.environ[env_name] = keys[k]
 
@@ -349,12 +385,12 @@ def save_settings(s: dict) -> None:
 
 
 @st.cache_data(ttl=300)
-def get_heygen_data() -> dict:
-    """Get HeyGen avatars filtered to ONLY vertical/Reel format (9:16)."""
+def _get_heygen_data_cached(api_key: str) -> dict:
+    """Get HeyGen avatars filtered to ONLY vertical/Reel format (9:16).
+    Cached per api_key so different users don't share results."""
     from PIL import Image
     from io import BytesIO
 
-    api_key = os.getenv("HEYGEN_API_KEY", "")
     if not api_key:
         return {"groups": [], "looks": {}, "voices": []}
     try:
@@ -415,9 +451,16 @@ def get_heygen_data() -> dict:
         return {"groups": [], "looks": {}, "voices": []}
 
 
-@st.cache_data(ttl=120)
-def get_heygen_credits() -> int:
+def get_heygen_data() -> dict:
+    """Wrapper that always passes the current user's HeyGen key (per-user cache)."""
     api_key = os.getenv("HEYGEN_API_KEY", "")
+    if not api_key:
+        return {"groups": [], "looks": {}, "voices": []}
+    return _get_heygen_data_cached(api_key)
+
+
+@st.cache_data(ttl=120)
+def _get_heygen_credits_cached(api_key: str) -> int:
     if not api_key:
         return -1
     try:
@@ -428,6 +471,14 @@ def get_heygen_credits() -> int:
         return r.json().get("data", {}).get("remaining_quota", 0)
     except Exception:
         return -1
+
+
+def get_heygen_credits() -> int:
+    """Wrapper: per-user cache via api_key in cache key."""
+    api_key = os.getenv("HEYGEN_API_KEY", "")
+    if not api_key:
+        return -1
+    return _get_heygen_credits_cached(api_key)
 
 
 RUN_MARKER = PROJECT_ROOT / "logs" / "wizard_run.lock"
