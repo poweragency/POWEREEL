@@ -115,9 +115,10 @@ except Exception:
     pass
 
 
-# ── Authentication ───────────────────────────────────────────────────────────
+# ── Authentication + Landing Page ───────────────────────────────────────────
 
-def check_password() -> bool:
+def show_landing_and_login() -> bool:
+    """Show interactive landing page with embedded login. Returns True if authenticated."""
     app_password = os.getenv("APP_PASSWORD", "")
     if not app_password:
         return True
@@ -126,20 +127,168 @@ def check_password() -> bool:
     if st.session_state.authenticated:
         return True
 
-    st.title("⚡ POWEREEL")
-    st.markdown("### Accesso riservato")
-    password = st.text_input("Password", type="password")
-    if st.button("Accedi", type="primary"):
-        if password == app_password:
-            st.session_state.authenticated = True
-            st.rerun()
-        else:
-            st.error("Password errata")
+    # ── HERO section ──
+    st.markdown("""
+    <style>
+    .hero {
+        text-align: center;
+        padding: 60px 20px 40px;
+        background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+        border-radius: 16px;
+        margin-bottom: 30px;
+    }
+    .hero h1 {
+        font-size: 3.5rem !important;
+        background: linear-gradient(90deg, #E8163C, #ff6b35);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin: 0 0 12px !important;
+        font-weight: 800;
+    }
+    .hero p {
+        font-size: 1.2rem;
+        color: #aaa;
+        max-width: 700px;
+        margin: 0 auto;
+    }
+    .feat-card {
+        background: #1a1a2e;
+        padding: 24px;
+        border-radius: 12px;
+        height: 100%;
+        border: 1px solid #2a2a3e;
+    }
+    .feat-card h3 {
+        color: #E8163C;
+        margin-top: 0;
+    }
+    .feat-card p {
+        color: #ccc;
+        font-size: 0.95rem;
+    }
+    @media (max-width: 768px) {
+        .hero h1 { font-size: 2rem !important; }
+        .hero p { font-size: 1rem; }
+        .hero { padding: 30px 15px; }
+    }
+    </style>
+
+    <div class="hero">
+        <h1>⚡ POWEREEL</h1>
+        <p>Genera Reel Instagram automatici con il tuo avatar AI. <br>
+        Notizie, script, voce, sottotitoli e pubblicazione: tutto in 5 minuti.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Features grid ──
+    st.markdown("### Cosa fa POWEREEL")
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        st.markdown("""
+        <div class="feat-card">
+        <h3>📰 Notizie automatiche</h3>
+        <p>Scraping in tempo reale dai feed RSS che scegli (CoinDesk, Cointelegraph, Sole24Ore...).
+        Nessun copia-incolla manuale.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with fc2:
+        st.markdown("""
+        <div class="feat-card">
+        <h3>🎭 Avatar realistico</h3>
+        <p>Il tuo clone HeyGen parla la tua voce. Scegli avatar, look e ambientazione
+        direttamente dal pannello con anteprime visive.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with fc3:
+        st.markdown("""
+        <div class="feat-card">
+        <h3>🎬 Sottotitoli karaoke</h3>
+        <p>Sottotitoli stile virali (nicktrading_) sincronizzati parola per parola con la voce
+        grazie a Whisper. 4 preset pronti + personalizzazione totale.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    fc4, fc5, fc6 = st.columns(3)
+    with fc4:
+        st.markdown("""
+        <div class="feat-card">
+        <h3>📱 Pubblicazione Instagram</h3>
+        <p>Reel pubblicati direttamente sul tuo account Instagram Business via Meta Graph API.
+        Anche programmati ogni giorno.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with fc5:
+        st.markdown("""
+        <div class="feat-card">
+        <h3>💰 Centro Costi</h3>
+        <p>Vedi in tempo reale quanto costa ogni reel, crediti rimanenti HeyGen
+        e proiezione mensile dei costi.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with fc6:
+        st.markdown("""
+        <div class="feat-card">
+        <h3>✋ Modalità ibrida</h3>
+        <p>Pieno automatico ($3/video) o semi-manuale ($0/video usando i crediti del piano HeyGen Business).
+        Scegli tu.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br><br>", unsafe_allow_html=True)
+
+    # ── How it works ──
+    st.markdown("### Come funziona")
+    st.markdown("""
+    1. **Configura una volta** — avatar, voce, fonti notizie, stile sottotitoli, account Instagram
+    2. **Clicca "Genera"** — POWEREEL fa tutto: notizie → script Claude → avatar HeyGen → editing
+    3. **Pubblica** — automatico su Instagram Reels, oppure scarichi e pubblichi tu
+
+    **Tempo medio:** 5 minuti dal click al reel pubblicato.
+    """)
+
+    st.divider()
+
+    # ── Login form ──
+    st.markdown("### 🔒 Accedi al pannello")
+    cl1, cl2 = st.columns([2, 3])
+    with cl1:
+        password = st.text_input("Password", type="password",
+                                  placeholder="Inserisci la password")
+        if st.button("Accedi →", type="primary", use_container_width=True):
+            if password == app_password:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("❌ Password errata")
+    with cl2:
+        st.info(
+            "Per ottenere l'accesso scrivi a **info@poweragency.it**\n\n"
+            "POWEREEL è in fase di beta privata — accesso solo su invito."
+        )
+
     return False
 
 
-if not check_password():
+def logout():
+    """Clear authentication and reset to landing."""
+    st.session_state.authenticated = False
+    st.session_state.step = 1
+    st.session_state.view = "wizard"
+    st.rerun()
+
+
+if not show_landing_and_login():
     st.stop()
+
+
+# ── Top bar with logout ──
+def render_top_bar():
+    """Render top-right logout button."""
+    cols = st.columns([6, 1])
+    with cols[1]:
+        if st.button("🚪 Logout", key="top_logout", use_container_width=True):
+            logout()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -384,6 +533,10 @@ STEP_TITLES = {
 }
 
 
+# ── Top bar (logout) ──
+render_top_bar()
+
+
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 
 st.sidebar.title("⚡ POWEREEL")
@@ -420,6 +573,10 @@ else:
     if st.sidebar.button("← Torna al Wizard", use_container_width=True, type="primary"):
         st.session_state.view = "wizard"
         st.rerun()
+
+st.sidebar.divider()
+if st.sidebar.button("🚪 Logout", key="sidebar_logout", use_container_width=True):
+    logout()
 
 
 # ── Wizard navigation ───────────────────────────────────────────────────────
