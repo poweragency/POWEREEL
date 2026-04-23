@@ -279,8 +279,19 @@ def run_pipeline_background(dry_run: bool):
 
 
 def is_generation_running() -> bool:
-    """Check if a generation is currently running (file-based)."""
-    return RUN_MARKER.exists()
+    """Check if a generation is currently running (file-based).
+    Auto-cleanup if marker is stale (>30 min old)."""
+    if not RUN_MARKER.exists():
+        return False
+    try:
+        started = float(RUN_MARKER.read_text().strip())
+        if time.time() - started > 1800:  # 30 min
+            RUN_MARKER.unlink()
+            DONE_MARKER.write_text("error: stuck process (auto-cleared after 30 min)")
+            return False
+    except Exception:
+        return True
+    return True
 
 
 def get_generation_started_at() -> float:
@@ -1115,10 +1126,27 @@ elif st.session_state.step == 7:
                 st.divider()
                 st.markdown("### 4️⃣ Aggiungi sottotitoli karaoke")
                 running = is_generation_running()
+                result = get_generation_result()
+
+                if result and result.startswith("error"):
+                    st.error(f"❌ Ultima esecuzione: {result}")
+
                 if running:
                     elapsed = int(time.time() - get_generation_started_at())
-                    st.info(f"⏳ Editing in corso... ({elapsed}s)")
-                    st.progress(min(elapsed / 300, 0.95))
+                    st.info(f"⏳ Editing in corso... ({elapsed}s) — di solito 2-4 min")
+                    st.progress(min(elapsed / 240, 0.95))
+                    log_path = PROJECT_ROOT / "logs" / "wizard_run.log"
+                    if log_path.exists():
+                        with st.expander("📜 Log live", expanded=False):
+                            lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+                            st.code("\n".join(lines[-15:]))
+                    cstop, _ = st.columns([1, 3])
+                    with cstop:
+                        if st.button("🛑 Annulla", key="abort_edit"):
+                            if RUN_MARKER.exists():
+                                RUN_MARKER.unlink()
+                            DONE_MARKER.write_text("error: annullato manualmente")
+                            st.rerun()
                     time.sleep(3)
                     st.rerun()
                 else:
@@ -1131,29 +1159,46 @@ elif st.session_state.step == 7:
                                 DONE_MARKER.unlink()
                             RUN_MARKER.write_text(str(time.time()))
                             wrapper = (
-                                "from src.config_loader import load_config\n"
-                                "from src.scriptwriter import load_script\n"
-                                "from src.editor import edit_video\n"
+                                "import traceback\n"
                                 "from pathlib import Path\n"
                                 f"DONE = Path(r'{DONE_MARKER}')\n"
                                 f"LOCK = Path(r'{RUN_MARKER}')\n"
                                 "try:\n"
+                                "    from src.config_loader import load_config\n"
+                                "    from src.scriptwriter import load_script\n"
+                                "    from src.editor import edit_video\n"
                                 "    cfg = load_config(check_ffmpeg=False)\n"
                                 f"    rd = Path(r'{run_dir}')\n"
                                 "    script = load_script(rd)\n"
                                 "    edit_video(rd / 'avatar_raw.mp4', script, cfg.editor, rd)\n"
                                 "    DONE.write_text('ok')\n"
                                 "except Exception as e:\n"
-                                "    DONE.write_text(f'error: {e}')\n"
+                                "    err_msg = f'error: {type(e).__name__}: {e}'\n"
+                                "    print(err_msg)\n"
+                                "    print(traceback.format_exc())\n"
+                                "    DONE.write_text(err_msg)\n"
                                 "finally:\n"
                                 "    if LOCK.exists(): LOCK.unlink()\n"
                             )
-                            with open(log, "w", encoding="utf-8") as logf:
-                                subprocess.run(
-                                    [sys.executable, "-c", wrapper],
-                                    stdout=logf, stderr=subprocess.STDOUT,
-                                    cwd=str(PROJECT_ROOT), timeout=600,
-                                )
+                            try:
+                                with open(log, "w", encoding="utf-8") as logf:
+                                    subprocess.run(
+                                        [sys.executable, "-c", wrapper],
+                                        stdout=logf, stderr=subprocess.STDOUT,
+                                        cwd=str(PROJECT_ROOT), timeout=1200,
+                                    )
+                            except subprocess.TimeoutExpired:
+                                # Subprocess hung — clean up
+                                if not DONE_MARKER.exists():
+                                    DONE_MARKER.write_text("error: timeout (>20 min)")
+                            except Exception as e:
+                                if not DONE_MARKER.exists():
+                                    DONE_MARKER.write_text(f"error: launcher failed: {e}")
+                            finally:
+                                # Always cleanup LOCK to avoid stuck state
+                                if RUN_MARKER.exists():
+                                    RUN_MARKER.unlink()
+
                         threading.Thread(target=_editor_only, daemon=True).start()
                         st.rerun()
 

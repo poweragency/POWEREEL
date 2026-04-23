@@ -37,21 +37,48 @@ STOP_WORDS = {
 }
 
 
-def _transcribe_with_timestamps(audio_path: Path, language: str = "it") -> list[dict]:
-    """Use Whisper to get word-level timestamps from audio."""
-    from faster_whisper import WhisperModel
+# Cached Whisper model — load once, reuse across calls
+_WHISPER_MODEL = None
 
-    logger.info("Trascrizione audio con Whisper...")
-    model = WhisperModel("small", device="cpu", compute_type="int8")
-    segments, _ = model.transcribe(
+
+def _get_whisper_model():
+    """Lazy-load Whisper model once and cache."""
+    global _WHISPER_MODEL
+    if _WHISPER_MODEL is None:
+        from faster_whisper import WhisperModel
+        import os
+        model_size = os.getenv("WHISPER_MODEL", "tiny")  # "tiny" = ~10x faster than "small"
+        logger.info("Caricamento Whisper model '%s' (one-time)...", model_size)
+        _WHISPER_MODEL = WhisperModel(
+            model_size,
+            device="cpu",
+            compute_type="int8",
+            num_workers=2,
+        )
+    return _WHISPER_MODEL
+
+
+def _transcribe_with_timestamps(audio_path: Path, language: str = "it") -> list[dict]:
+    """Whisper word-level timestamps — fast mode (tiny model + beam_size=1)."""
+    import time as _time
+    logger.info("Trascrizione audio con Whisper (fast mode)...")
+    t0 = _time.time()
+
+    model = _get_whisper_model()
+    segments, _info = model.transcribe(
         str(audio_path),
         language=language,
         word_timestamps=True,
-        vad_filter=True,
+        vad_filter=False,           # skip VAD = faster
+        beam_size=1,                # greedy = faster
+        best_of=1,
+        condition_on_previous_text=False,
     )
 
     words = []
     for segment in segments:
+        if not segment.words:
+            continue
         for word in segment.words:
             words.append({
                 "start": word.start,
@@ -59,7 +86,7 @@ def _transcribe_with_timestamps(audio_path: Path, language: str = "it") -> list[
                 "text": word.word.strip(),
             })
 
-    logger.info("Whisper: %d parole trascritte", len(words))
+    logger.info("Whisper: %d parole trascritte in %.1fs", len(words), _time.time() - t0)
     return words
 
 
@@ -516,14 +543,18 @@ def edit_video(
     else:
         final = composite
 
+    import os as _os
+    cpu_count = max(2, (_os.cpu_count() or 4))
+    logger.info("Export video con preset ultrafast (%d threads)...", cpu_count)
     final.write_videofile(
         str(output_path),
         codec="libx264",
         audio_codec="aac",
         fps=30,
-        bitrate="8000k",
-        preset="medium",
-        ffmpeg_params=["-movflags", "+faststart"],
+        bitrate="6000k",
+        preset="ultrafast",
+        threads=cpu_count,
+        ffmpeg_params=["-movflags", "+faststart", "-tune", "fastdecode"],
         logger=None,
     )
 
