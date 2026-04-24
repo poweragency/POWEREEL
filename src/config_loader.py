@@ -125,6 +125,7 @@ class AppConfig(BaseModel):
     meta_app_secret: str = ""
     instagram_business_account_id: str = ""
     facebook_page_id: str = ""
+    facebook_page_access_token: str = ""
 
 
 # ── Loader ────────────────────────────────────────────────────────────────────
@@ -220,6 +221,7 @@ def load_config(
         "INSTAGRAM_BUSINESS_ACCOUNT_ID", ""
     )
     raw["facebook_page_id"] = os.getenv("FACEBOOK_PAGE_ID", "")
+    raw["facebook_page_access_token"] = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN", "")
 
     config = AppConfig(**raw)
 

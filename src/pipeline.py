@@ -179,6 +179,7 @@ def run_pipeline(
                         fb_id = publish_to_facebook(
                             final_path, articles, config.publisher,
                             config.facebook_page_id, token,
+                            page_access_token=config.facebook_page_access_token,
                         )
                         publish_results["facebook"] = fb_id
                         logger.info("Facebook OK: video_id=%s", fb_id)

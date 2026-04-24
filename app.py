@@ -108,7 +108,8 @@ try:
     if hasattr(st, "secrets"):
         for key in ["HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
                      "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
-                     "FACEBOOK_PAGE_ID",
+                     "FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN",
+                     "PUBLIC_BASE_URL",
                      "APP_PASSWORD", "ADMIN_EMAIL", "ADMIN_PASSWORD"]:
             if key in st.secrets:
                 os.environ[key] = st.secrets[key]
@@ -129,12 +130,11 @@ _users.ensure_admin_exists(_admin_email, _admin_password)
 _admin_user = _users.get_user(_admin_email)
 if _admin_user and not _admin_user.get("api_keys", {}).get("heygen"):
     _seed_keys = {}
+    # Only seed PER-USER keys, never platform-wide credentials (Meta App)
     for env_name, profile_key in [
         ("HEYGEN_API_KEY", "heygen"),
         ("ANTHROPIC_API_KEY", "anthropic"),
         ("META_ACCESS_TOKEN", "meta_access_token"),
-        ("META_APP_ID", "meta_app_id"),
-        ("META_APP_SECRET", "meta_app_secret"),
         ("INSTAGRAM_BUSINESS_ACCOUNT_ID", "instagram_business_account_id"),
         ("FACEBOOK_PAGE_ID", "facebook_page_id"),
     ]:
@@ -144,33 +144,41 @@ if _admin_user and not _admin_user.get("api_keys", {}).get("heygen"):
     if _seed_keys:
         _users.update_user_keys(_admin_email, _seed_keys)
 
-# CRITICAL: clear env API keys so they're never used as fallback.
-# Each user must provide their own keys via the dashboard.
+# CRITICAL: clear PER-USER env API keys so they're never used as fallback.
+# Each user must provide their own keys via the dashboard. Platform-wide
+# credentials (META_APP_ID, META_APP_SECRET) stay in env — they belong to
+# POWEREEL itself, not to a single customer.
 for _env in [
     "HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
-    "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
-    "FACEBOOK_PAGE_ID",
+    "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+    "FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN",
 ]:
     if _env in os.environ:
         del os.environ[_env]
 
 
+# Per-user API keys (each customer provides their own).
+# NOTE: META_APP_ID and META_APP_SECRET are NOT here — they are PLATFORM-WIDE
+# (set once in Railway env by the admin) because one single Meta App serves
+# all customers via OAuth.
 _API_KEY_MAPPING = {
     "heygen": "HEYGEN_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "meta_access_token": "META_ACCESS_TOKEN",
-    "meta_app_id": "META_APP_ID",
-    "meta_app_secret": "META_APP_SECRET",
     "instagram_business_account_id": "INSTAGRAM_BUSINESS_ACCOUNT_ID",
     "facebook_page_id": "FACEBOOK_PAGE_ID",
+    "facebook_page_access_token": "FACEBOOK_PAGE_ACCESS_TOKEN",
 }
+
+# Platform-wide env vars (from Railway secrets, never cleared on logout).
+_PLATFORM_ENV_VARS = {"META_APP_ID", "META_APP_SECRET", "PUBLIC_BASE_URL"}
 
 
 def _apply_user_api_keys(user: dict) -> None:
     """Inject ONLY this user's API keys into env vars. Clears all others first."""
-    # Clear all key env vars — strict per-user isolation
+    # Clear per-user env vars (not platform-wide ones)
     for env_name in _API_KEY_MAPPING.values():
-        if env_name in os.environ:
+        if env_name in os.environ and env_name not in _PLATFORM_ENV_VARS:
             del os.environ[env_name]
     # Set only those the user has
     keys = user.get("api_keys", {}) or {}
@@ -349,10 +357,10 @@ def logout():
     st.session_state.is_admin = False
     st.session_state.step = 1
     st.session_state.view = "wizard"
-    # Clear API key env vars so the next user doesn't inherit them
+    # Clear PER-USER API key env vars (NOT platform-wide ones)
     for key in ["HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
-                "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
-                "FACEBOOK_PAGE_ID"]:
+                "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+                "FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN"]:
         if key in os.environ:
             del os.environ[key]
     st.rerun()
@@ -746,45 +754,48 @@ if st.session_state.view == "api_keys":
             placeholder="sk-ant-api03-...",
         )
 
-        st.divider()
-        st.subheader("Meta — Instagram + Facebook (opzionale, per pubblicazione)")
-        st.caption("La stessa Meta App copre sia Instagram che Facebook Pages.")
-        new_meta_token = st.text_input(
-            "META_ACCESS_TOKEN",
-            value=current_keys.get("meta_access_token", ""),
-            type="password",
-        )
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            new_meta_app_id = st.text_input(
-                "META_APP_ID", value=current_keys.get("meta_app_id", "")
-            )
-            new_ig_id = st.text_input(
-                "INSTAGRAM_BUSINESS_ACCOUNT_ID",
-                value=current_keys.get("instagram_business_account_id", ""),
-            )
-        with col_m2:
-            new_meta_secret = st.text_input(
-                "META_APP_SECRET",
-                value=current_keys.get("meta_app_secret", ""),
-                type="password",
-            )
-            new_fb_page = st.text_input(
-                "FACEBOOK_PAGE_ID (per pubblicare anche su FB)",
-                value=current_keys.get("facebook_page_id", ""),
-            )
-
         if st.form_submit_button("💾 Salva chiavi", type="primary"):
             _users.update_user_keys(st.session_state.user_email, {
                 "heygen": new_heygen.strip(),
                 "anthropic": new_anthropic.strip(),
-                "meta_access_token": new_meta_token.strip(),
-                "meta_app_id": new_meta_app_id.strip(),
-                "meta_app_secret": new_meta_secret.strip(),
-                "instagram_business_account_id": new_ig_id.strip(),
-                "facebook_page_id": new_fb_page.strip(),
             })
             st.success("✅ Chiavi salvate! Ricarica la pagina per applicarle ovunque.")
+
+    st.divider()
+
+    # ── Meta / Instagram / Facebook (OAuth — no manual token needed) ──
+    st.subheader("Instagram + Facebook")
+    st.caption(
+        "Per pubblicare i reel su Instagram e Facebook **non serve nessuna chiave**. "
+        "Basta cliccare 'Collega Facebook' e fare login con il tuo account social."
+    )
+
+    fb_page = current_keys.get("facebook_page_name") or current_keys.get("facebook_page_id")
+    ig_user = current_keys.get("instagram_username")
+
+    col_status, col_action = st.columns([3, 1])
+    with col_status:
+        if fb_page:
+            st.success(f"✅ Pagina Facebook collegata: **{fb_page}**")
+        if ig_user:
+            st.success(f"✅ Instagram collegato: **@{ig_user}**")
+        if not fb_page and not ig_user:
+            st.info("Nessun account social ancora collegato.")
+    with col_action:
+        public_base = os.getenv("PUBLIC_BASE_URL", "")
+        if public_base:
+            oauth_url = f"{public_base}/oauth/facebook/start?email={st.session_state.user_email}"
+            label = "🔄 Riconnetti" if (fb_page or ig_user) else "🔗 Collega Facebook"
+            st.markdown(
+                f'<a href="{oauth_url}" target="_blank" '
+                f'style="display:block; padding:10px; background:#1877F2; color:white; '
+                f'text-align:center; border-radius:8px; text-decoration:none; font-weight:bold;">'
+                f'{label}</a>',
+                unsafe_allow_html=True,
+            )
+            st.caption("Si apre una nuova scheda")
+        else:
+            st.warning("OAuth non configurato (manca PUBLIC_BASE_URL)")
 
     st.divider()
     st.info("💡 Non sai come ottenere queste chiavi? Vai su **Guida Setup** dalla sidebar.")
@@ -1458,9 +1469,15 @@ elif st.session_state.step == 6:
     publisher_cfg = settings.setdefault("publisher", {})
     enabled = publisher_cfg.get("enabled_platforms", ["instagram"])
 
+    # Pull current connection info from user profile (set by OAuth flow)
+    user_profile = _users.get_user(st.session_state.user_email) or {}
+    user_keys = user_profile.get("api_keys", {})
+    ig_id = user_keys.get("instagram_business_account_id", "") or os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
+    ig_user = user_keys.get("instagram_username", "")
+    fb_id = user_keys.get("facebook_page_id", "") or os.getenv("FACEBOOK_PAGE_ID", "")
+    fb_name = user_keys.get("facebook_page_name", "")
+
     col_ig, col_fb = st.columns(2)
-    ig_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
-    fb_id = os.getenv("FACEBOOK_PAGE_ID", "")
 
     with col_ig:
         ig_active = "instagram" in enabled
@@ -1472,9 +1489,10 @@ elif st.session_state.step == 6:
             key="toggle_ig",
         )
         if ig_id:
-            st.caption(f"✅ Account collegato — ID: {ig_id}")
+            label = f"@{ig_user}" if ig_user else f"ID: {ig_id}"
+            st.caption(f"✅ Account collegato: **{label}**")
         else:
-            st.caption("⚠️ INSTAGRAM_BUSINESS_ACCOUNT_ID mancante. Vai su 🔑 Configura API Keys.")
+            st.caption("⚠️ Non collegato. Vai su 🔑 Configura API Keys → Collega Facebook")
 
     with col_fb:
         fb_active = "facebook" in enabled
@@ -1486,9 +1504,10 @@ elif st.session_state.step == 6:
             key="toggle_fb",
         )
         if fb_id:
-            st.caption(f"✅ Pagina collegata — ID: {fb_id}")
+            label = fb_name if fb_name else f"ID: {fb_id}"
+            st.caption(f"✅ Pagina collegata: **{label}**")
         else:
-            st.caption("⚠️ FACEBOOK_PAGE_ID mancante. Vai su 🔑 Configura API Keys.")
+            st.caption("⚠️ Non collegata. Vai su 🔑 Configura API Keys → Collega Facebook")
 
     new_enabled = []
     if ig_toggle and ig_id:
@@ -1867,6 +1886,7 @@ elif st.session_state.step == 7:
                                     fb_id = publish_to_facebook(
                                         final_path, articles, cfg.publisher,
                                         cfg.facebook_page_id, token,
+                                        page_access_token=cfg.facebook_page_access_token,
                                     )
                                     results["facebook"] = fb_id
                                     st.success(f"✅ Facebook: {fb_id}")

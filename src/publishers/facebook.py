@@ -145,17 +145,24 @@ def publish_to_facebook(
     config: PublisherConfig,
     page_id: str,
     user_access_token: str,
+    page_access_token: str = "",
 ) -> str:
-    """Full FB Reels publish flow: start → upload → finish. Returns video_id."""
+    """Full FB Reels publish flow: start → upload → finish. Returns video_id.
+
+    If `page_access_token` is provided (e.g. saved from OAuth flow), uses it
+    directly. Otherwise derives it from the user token.
+    """
     if not page_id:
         raise ValueError("FACEBOOK_PAGE_ID non configurato")
-    if not user_access_token:
-        raise ValueError("META_ACCESS_TOKEN non configurato")
 
     caption = _build_facebook_caption(articles, config)
     logger.info("FB caption (%d caratteri)", len(caption))
 
-    page_token = _get_page_token(user_access_token, page_id)
+    page_token = page_access_token
+    if not page_token:
+        if not user_access_token:
+            raise ValueError("Né page_access_token né user_access_token configurati")
+        page_token = _get_page_token(user_access_token, page_id)
 
     video_id, upload_url = _start_upload(page_id, page_token)
     _upload_binary(upload_url, video_path, page_token)

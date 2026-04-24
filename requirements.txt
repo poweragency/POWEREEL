@@ -24,6 +24,11 @@ requests>=2.31
 # Dashboard
 streamlit>=1.35
 
+# Server / OAuth proxy
+fastapi>=0.110
+uvicorn[standard]>=0.27
+websockets>=12.0
+
 # Utilities
 tenacity>=8.2
 pydantic>=2.5
