@@ -108,6 +108,7 @@ try:
     if hasattr(st, "secrets"):
         for key in ["HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
                      "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+                     "FACEBOOK_PAGE_ID",
                      "APP_PASSWORD", "ADMIN_EMAIL", "ADMIN_PASSWORD"]:
             if key in st.secrets:
                 os.environ[key] = st.secrets[key]
@@ -135,6 +136,7 @@ if _admin_user and not _admin_user.get("api_keys", {}).get("heygen"):
         ("META_APP_ID", "meta_app_id"),
         ("META_APP_SECRET", "meta_app_secret"),
         ("INSTAGRAM_BUSINESS_ACCOUNT_ID", "instagram_business_account_id"),
+        ("FACEBOOK_PAGE_ID", "facebook_page_id"),
     ]:
         v = os.getenv(env_name)
         if v:
@@ -147,6 +149,7 @@ if _admin_user and not _admin_user.get("api_keys", {}).get("heygen"):
 for _env in [
     "HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
     "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+    "FACEBOOK_PAGE_ID",
 ]:
     if _env in os.environ:
         del os.environ[_env]
@@ -159,6 +162,7 @@ _API_KEY_MAPPING = {
     "meta_app_id": "META_APP_ID",
     "meta_app_secret": "META_APP_SECRET",
     "instagram_business_account_id": "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+    "facebook_page_id": "FACEBOOK_PAGE_ID",
 }
 
 
@@ -273,9 +277,9 @@ def show_landing_and_login() -> bool:
     with fc4:
         st.markdown("""
         <div class="feat-card">
-        <h3>📱 Pubblicazione Instagram</h3>
-        <p>Reel pubblicati direttamente sul tuo account Instagram Business via Meta Graph API.
-        Anche programmati ogni giorno.</p>
+        <h3>📱 Pubblicazione Multi-Social</h3>
+        <p>Reel pubblicati su <strong>Instagram + Facebook</strong> con un click via Meta Graph API.
+        Presto anche TikTok e YouTube Shorts.</p>
         </div>
         """, unsafe_allow_html=True)
     with fc5:
@@ -347,7 +351,8 @@ def logout():
     st.session_state.view = "wizard"
     # Clear API key env vars so the next user doesn't inherit them
     for key in ["HEYGEN_API_KEY", "ANTHROPIC_API_KEY", "META_ACCESS_TOKEN",
-                "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID"]:
+                "META_APP_ID", "META_APP_SECRET", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+                "FACEBOOK_PAGE_ID"]:
         if key in os.environ:
             del os.environ[key]
     st.rerun()
@@ -614,7 +619,7 @@ STEPS = [
     "3. Fonti Notizie",
     "4. Script e Tono",
     "5. Stile Sottotitoli",
-    "6. Instagram",
+    "6. Distribuzione Social",
     "7. Genera e Pubblica",
 ]
 
@@ -624,7 +629,7 @@ STEP_TITLES = {
     3: "Passo 3 — Fonti Notizie",
     4: "Passo 4 — Script e Tono",
     5: "Passo 5 — Stile Sottotitoli",
-    6: "Passo 6 — Instagram",
+    6: "Passo 6 — Distribuzione Social",
     7: "Passo 7 — Genera e Pubblica",
 }
 
@@ -742,7 +747,8 @@ if st.session_state.view == "api_keys":
         )
 
         st.divider()
-        st.subheader("Meta / Instagram (opzionale, per pubblicazione automatica)")
+        st.subheader("Meta — Instagram + Facebook (opzionale, per pubblicazione)")
+        st.caption("La stessa Meta App copre sia Instagram che Facebook Pages.")
         new_meta_token = st.text_input(
             "META_ACCESS_TOKEN",
             value=current_keys.get("meta_access_token", ""),
@@ -763,6 +769,10 @@ if st.session_state.view == "api_keys":
                 value=current_keys.get("meta_app_secret", ""),
                 type="password",
             )
+            new_fb_page = st.text_input(
+                "FACEBOOK_PAGE_ID (per pubblicare anche su FB)",
+                value=current_keys.get("facebook_page_id", ""),
+            )
 
         if st.form_submit_button("💾 Salva chiavi", type="primary"):
             _users.update_user_keys(st.session_state.user_email, {
@@ -772,6 +782,7 @@ if st.session_state.view == "api_keys":
                 "meta_app_id": new_meta_app_id.strip(),
                 "meta_app_secret": new_meta_secret.strip(),
                 "instagram_business_account_id": new_ig_id.strip(),
+                "facebook_page_id": new_fb_page.strip(),
             })
             st.success("✅ Chiavi salvate! Ricarica la pagina per applicarle ovunque.")
 
@@ -889,6 +900,41 @@ if st.session_state.view == "guide":
         **f) Incolla tutto in POWEREEL**
 
         - Vai su **🔑 Configura API Keys** → incolla i 4 valori Meta/Instagram
+        """)
+
+    # ── Facebook ──
+    with st.expander("👥 4. Setup Facebook Pages — Pubblica anche su Facebook (opzionale)"):
+        st.markdown("""
+        **Buona notizia:** se hai già configurato Instagram al punto 3, hai già la maggior
+        parte di quello che ti serve. La stessa Meta App e lo stesso `META_ACCESS_TOKEN`
+        sono validi anche per Facebook.
+
+        **Cosa serve in più:**
+
+        **a) Una Pagina Facebook attiva**
+
+        - Devi essere admin della Pagina FB su cui vuoi pubblicare i Reels
+        - Va bene la stessa Pagina FB collegata al tuo account Instagram Business
+
+        **b) Permessi Meta App aggiuntivi**
+
+        - Sulla tua Meta Developer App, in **Casi d'uso** aggiungi i permessi:
+          - `pages_manage_posts`
+          - `publish_video`
+        - Sottoponi a **App Review** (di solito 3-7 giorni di approvazione, più veloce
+          se la tua app è già approvata per Instagram)
+
+        **c) Trova `FACEBOOK_PAGE_ID`**
+
+        - Vai su **Strumenti → Graph API Explorer**
+        - Fai una GET su `me/accounts` con il tuo token
+        - Copia l'`id` della Pagina su cui vuoi pubblicare
+
+        **d) Incolla in POWEREEL**
+
+        - Vai su **🔑 Configura API Keys** → incolla `FACEBOOK_PAGE_ID`
+        - Nel **Passo 6 — Distribuzione Social** del wizard troverai il toggle per
+          attivare la pubblicazione su Facebook
         """)
 
     st.divider()
@@ -1404,27 +1450,72 @@ elif st.session_state.step == 5:
 
 elif st.session_state.step == 6:
     st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[6]}</h1>', unsafe_allow_html=True)
-    st.caption("Caption, hashtag e impostazioni di pubblicazione")
+    st.caption("Scegli su quali social pubblicare e configura la caption")
 
-    settings["publisher"]["caption_template"] = st.text_area(
-        "Template Caption (usa {summary_bullets} per le notizie)",
-        settings["publisher"]["caption_template"], height=200,
-    )
+    # ── Platform selection ──
+    st.subheader("📡 Piattaforme di pubblicazione")
+
+    publisher_cfg = settings.setdefault("publisher", {})
+    enabled = publisher_cfg.get("enabled_platforms", ["instagram"])
+
+    col_ig, col_fb = st.columns(2)
+    ig_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
+    fb_id = os.getenv("FACEBOOK_PAGE_ID", "")
+
+    with col_ig:
+        ig_active = "instagram" in enabled
+        ig_disabled = not ig_id
+        ig_toggle = st.toggle(
+            "📱 Instagram Reels",
+            value=ig_active and not ig_disabled,
+            disabled=ig_disabled,
+            key="toggle_ig",
+        )
+        if ig_id:
+            st.caption(f"✅ Account collegato — ID: {ig_id}")
+        else:
+            st.caption("⚠️ INSTAGRAM_BUSINESS_ACCOUNT_ID mancante. Vai su 🔑 Configura API Keys.")
+
+    with col_fb:
+        fb_active = "facebook" in enabled
+        fb_disabled = not fb_id
+        fb_toggle = st.toggle(
+            "👥 Facebook Reels",
+            value=fb_active and not fb_disabled,
+            disabled=fb_disabled,
+            key="toggle_fb",
+        )
+        if fb_id:
+            st.caption(f"✅ Pagina collegata — ID: {fb_id}")
+        else:
+            st.caption("⚠️ FACEBOOK_PAGE_ID mancante. Vai su 🔑 Configura API Keys.")
+
+    new_enabled = []
+    if ig_toggle and ig_id:
+        new_enabled.append("instagram")
+    if fb_toggle and fb_id:
+        new_enabled.append("facebook")
+    publisher_cfg["enabled_platforms"] = new_enabled
 
     st.divider()
-    st.subheader("Account")
-    ig_id = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
-    if ig_id:
-        st.success(f"Instagram collegato — ID: {ig_id}")
-    else:
-        st.error("INSTAGRAM_BUSINESS_ACCOUNT_ID mancante in .env")
+
+    # ── Caption template ──
+    st.subheader("📝 Caption")
+    publisher_cfg["caption_template"] = st.text_area(
+        "Template Caption (usa {summary_bullets} per le notizie)",
+        publisher_cfg.get("caption_template", ""), height=180,
+    )
+    st.caption("La stessa caption viene usata per tutte le piattaforme abilitate.")
 
     if st.button("💾 Salva", type="secondary"):
         save_settings(settings)
         st.success("Salvato")
 
     st.divider()
-    nav_buttons(6, bool(ig_id))
+    can_proceed = len(new_enabled) > 0
+    if not can_proceed:
+        st.warning("Seleziona almeno una piattaforma per proseguire")
+    nav_buttons(6, can_proceed)
 
 
 # ── STEP 7: Genera & Pubblica ────────────────────────────────────────────────
@@ -1732,29 +1823,62 @@ elif st.session_state.step == 7:
 
         st.divider()
         st.subheader("📤 Pubblicazione")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("📱 Pubblica su Instagram", type="primary", use_container_width=True):
-                with st.spinner("Pubblicazione in corso..."):
-                    try:
-                        from src.config_loader import load_config
-                        from src.publisher import publish_to_instagram
-                        from src.scraper import load_articles
-                        from src.auth import check_and_refresh_token
 
-                        cfg = load_config(check_ffmpeg=False)
-                        articles = load_articles(run_dir)
-                        token = check_and_refresh_token(
-                            cfg.meta_access_token, cfg.meta_app_id, cfg.meta_app_secret
-                        )
-                        media_id = publish_to_instagram(
-                            final_path, articles, cfg.publisher,
-                            cfg.instagram_business_account_id, token,
-                        )
-                        st.success(f"✅ Pubblicato! Media ID: {media_id}")
-                    except Exception as e:
-                        st.error(f"Errore: {e}")
-        with col2:
-            st.caption("La pubblicazione carica il video sul tuo account Instagram Business")
+        platforms = settings.get("publisher", {}).get("enabled_platforms", ["instagram"])
+        if not platforms:
+            st.warning("Nessuna piattaforma selezionata — torna allo Step 6.")
+        else:
+            label = "📤 Pubblica su " + " + ".join(
+                {"instagram": "Instagram", "facebook": "Facebook"}[p]
+                for p in platforms if p in ("instagram", "facebook")
+            )
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button(label, type="primary", use_container_width=True):
+                    with st.spinner("Pubblicazione in corso..."):
+                        try:
+                            from src.config_loader import load_config
+                            from src.scraper import load_articles
+                            from src.auth import check_and_refresh_token
+
+                            cfg = load_config(check_ffmpeg=False)
+                            articles = load_articles(run_dir)
+                            token = check_and_refresh_token(
+                                cfg.meta_access_token, cfg.meta_app_id, cfg.meta_app_secret
+                            )
+
+                            results = {}
+                            if "instagram" in platforms:
+                                try:
+                                    from src.publishers.instagram import publish_to_instagram
+                                    media_id = publish_to_instagram(
+                                        final_path, articles, cfg.publisher,
+                                        cfg.instagram_business_account_id, token,
+                                    )
+                                    results["instagram"] = media_id
+                                    st.success(f"✅ Instagram: {media_id}")
+                                except Exception as e:
+                                    results["instagram"] = f"error: {e}"
+                                    st.error(f"❌ Instagram: {e}")
+
+                            if "facebook" in platforms:
+                                try:
+                                    from src.publishers.facebook import publish_to_facebook
+                                    fb_id = publish_to_facebook(
+                                        final_path, articles, cfg.publisher,
+                                        cfg.facebook_page_id, token,
+                                    )
+                                    results["facebook"] = fb_id
+                                    st.success(f"✅ Facebook: {fb_id}")
+                                except Exception as e:
+                                    results["facebook"] = f"error: {e}"
+                                    st.error(f"❌ Facebook: {e}")
+                        except Exception as e:
+                            st.error(f"Errore: {e}")
+            with col2:
+                st.caption(
+                    "Il video viene pubblicato su tutte le piattaforme attive. "
+                    "Se una fallisce, le altre continuano."
+                )
 
     nav_buttons(7, True, next_label="Fine")

@@ -30,12 +30,14 @@ def _save_metadata(
     publish_id: str | None,
     dry_run: bool,
     error: str | None = None,
+    publish_results: dict | None = None,
 ) -> None:
-    """Save run metadata."""
+    """Save run metadata. publish_results = per-platform results dict."""
     meta = {
         "timestamp": datetime.now().isoformat(),
         "dry_run": dry_run,
         "publish_id": publish_id,
+        "publish_results": publish_results or {},
         "status": "error" if error else "success",
         "error": error,
     }
@@ -67,6 +69,7 @@ def run_pipeline(
     logger.info("=" * 60)
 
     publish_id = None
+    publish_results: dict[str, str] = {}
     error_msg = None
 
     try:
@@ -132,30 +135,56 @@ def run_pipeline(
                 raise FileNotFoundError(f"Video finale non trovato: {final_path}")
             logger.info("Video finale caricato da run precedente")
 
-        # ── Stage 5: Publishing ───────────────────────────────────────
+        # ── Stage 5: Publishing (multi-platform) ──────────────────────
         if start_index <= 4:
             if dry_run:
                 logger.info("── Stage 5/5: SKIP (dry-run) ──")
                 logger.info("Video finale pronto: %s", final_path)
             else:
-                logger.info("── Stage 5/5: Pubblicazione Instagram ──")
                 from .auth import check_and_refresh_token
-                from .publisher import publish_to_instagram
 
-                # Refresh token if needed
+                platforms = config.publisher.enabled_platforms or ["instagram"]
+                logger.info(
+                    "── Stage 5/5: Pubblicazione su %d piattaform%s: %s ──",
+                    len(platforms), "e" if len(platforms) > 1 else "a",
+                    ", ".join(platforms),
+                )
+
+                # Single token refresh — all Meta platforms use it
                 token = check_and_refresh_token(
                     config.meta_access_token,
                     config.meta_app_id,
                     config.meta_app_secret,
                 )
 
-                publish_id = publish_to_instagram(
-                    final_path,
-                    articles,
-                    config.publisher,
-                    config.instagram_business_account_id,
-                    token,
-                )
+                # ── Instagram ──
+                if "instagram" in platforms:
+                    try:
+                        from .publishers.instagram import publish_to_instagram
+                        ig_id = publish_to_instagram(
+                            final_path, articles, config.publisher,
+                            config.instagram_business_account_id, token,
+                        )
+                        publish_results["instagram"] = ig_id
+                        publish_id = ig_id  # legacy field
+                        logger.info("Instagram OK: media_id=%s", ig_id)
+                    except Exception as e:
+                        publish_results["instagram"] = f"error: {e}"
+                        logger.exception("Instagram publish FAILED")
+
+                # ── Facebook ──
+                if "facebook" in platforms:
+                    try:
+                        from .publishers.facebook import publish_to_facebook
+                        fb_id = publish_to_facebook(
+                            final_path, articles, config.publisher,
+                            config.facebook_page_id, token,
+                        )
+                        publish_results["facebook"] = fb_id
+                        logger.info("Facebook OK: video_id=%s", fb_id)
+                    except Exception as e:
+                        publish_results["facebook"] = f"error: {e}"
+                        logger.exception("Facebook publish FAILED")
 
         # ── Cleanup ───────────────────────────────────────────────────
         from .storage import cleanup_old_runs
@@ -171,7 +200,7 @@ def run_pipeline(
         logger.exception("Pipeline FALLITA: %s", e)
         raise
     finally:
-        _save_metadata(run_dir, publish_id, dry_run, error_msg)
+        _save_metadata(run_dir, publish_id, dry_run, error_msg, publish_results)
 
 
 def main():

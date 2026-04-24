@@ -99,6 +99,7 @@ class EditorConfig(BaseModel):
 class PublisherConfig(BaseModel):
     caption_template: str = ""
     max_hashtags: int = 30
+    enabled_platforms: list[str] = ["instagram"]  # "instagram", "facebook" (later: "tiktok", "youtube")
 
 
 class PipelineConfig(BaseModel):
@@ -123,6 +124,7 @@ class AppConfig(BaseModel):
     meta_app_id: str = ""
     meta_app_secret: str = ""
     instagram_business_account_id: str = ""
+    facebook_page_id: str = ""
 
 
 # ── Loader ────────────────────────────────────────────────────────────────────
@@ -217,6 +219,7 @@ def load_config(
     raw["instagram_business_account_id"] = os.getenv(
         "INSTAGRAM_BUSINESS_ACCOUNT_ID", ""
     )
+    raw["facebook_page_id"] = os.getenv("FACEBOOK_PAGE_ID", "")
 
     config = AppConfig(**raw)
 
