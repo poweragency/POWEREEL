@@ -244,58 +244,130 @@ async def fb_oauth_callback(code: str = "", state: str = "", error: str = "",
         _users.update_user_keys(email, keys_to_save)
 
         ig_count = sum(1 for p in meta_pages if p["instagram_business_account_id"])
-        msg = (
+        headline = (
             f"<b>{len(meta_pages)} pagin{'e' if len(meta_pages) != 1 else 'a'} Facebook</b> "
-            f"connesse, di cui <b>{ig_count} con Instagram</b>.<br>"
-            f"Vai allo <i>Step 6 · Distribuzione Social</i> per scegliere su quali pubblicare."
+            f"connesse, di cui <b>{ig_count} con Instagram</b>."
         )
-        return _oauth_done_html(ok=True, message=msg)
+        return _oauth_done_html(ok=True, message=headline, pages=meta_pages)
 
     except Exception as e:
         logger.exception("OAuth callback error")
         return _oauth_done_html(ok=False, message=f"Errore: {e}")
 
 
-def _oauth_done_html(ok: bool, message: str) -> Response:
-    """Return an HTML page that auto-closes (popup) or redirects."""
+def _oauth_done_html(ok: bool, message: str, pages: list | None = None) -> Response:
+    """Return an HTML page that auto-closes (popup) or redirects.
+
+    On success, optionally renders the list of newly-connected pages
+    (with FB icon + IG handle chip) and a CTA to Step 6.
+    """
     icon = "✅" if ok else "❌"
     color = "#22c55e" if ok else "#ef4444"
+
+    pages_html = ""
+    if ok and pages:
+        rows = []
+        for p in pages:
+            ig_chip = ""
+            if p.get("instagram_business_account_id"):
+                ig_user = p.get("instagram_username", "")
+                ig_chip = (
+                    f'<span class="ig-chip">@{ig_user}</span>'
+                    if ig_user else '<span class="ig-chip">IG</span>'
+                )
+            page_name = p.get("page_name", "?")
+            rows.append(
+                f'<div class="page-row">'
+                f'  <div class="fb-dot">f</div>'
+                f'  <div class="page-info">'
+                f'    <div class="page-name">{page_name}</div>'
+                f'    {ig_chip}'
+                f'  </div>'
+                f'</div>'
+            )
+        pages_html = (
+            f'<div class="pages-list">'
+            f'  <div class="pages-list-title">PAGINE COLLEGATE</div>'
+            f'  {"".join(rows)}'
+            f'</div>'
+        )
+
+    cta_html = (
+        '<a href="/app" class="btn-primary">Vai allo Step 6 → scegli pagine</a>'
+        '<button onclick="window.close()" class="btn-link">Chiudi questa scheda</button>'
+        if ok else
+        '<button onclick="window.close()" class="btn-primary">Chiudi e riprova</button>'
+    )
+
     html = f"""
     <!DOCTYPE html>
     <html lang="it">
     <head>
       <meta charset="utf-8">
-      <title>POWEREEL - OAuth</title>
+      <title>POWEREEL · Collegamento {'riuscito' if ok else 'fallito'}</title>
+      <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
       <style>
-        body {{ font-family: system-ui; background: #0f0f1e; color: white;
+        * {{ box-sizing: border-box; }}
+        body {{ font-family: 'Geist', system-ui, sans-serif; background: #0b0d1a;
+                color: #fafafa; margin: 0; padding: 24px;
                 display: flex; align-items: center; justify-content: center;
-                height: 100vh; margin: 0; }}
-        .box {{ background: #1a1a2e; padding: 40px; border-radius: 16px;
-                border: 2px solid {color}; text-align: center; max-width: 500px; }}
-        .icon {{ font-size: 4rem; margin-bottom: 16px; }}
-        h1 {{ color: {color}; margin: 0 0 16px; }}
-        p {{ color: #ccc; line-height: 1.5; }}
-        button {{ background: #E8163C; color: white; border: 0; padding: 12px 24px;
-                  border-radius: 8px; cursor: pointer; font-size: 1rem;
-                  margin-top: 24px; }}
+                min-height: 100vh; }}
+        .box {{ background: linear-gradient(180deg, #1a1a2e 0%, #141422 100%);
+                padding: 36px; border-radius: 20px;
+                border: 1px solid rgba(255,255,255,.08);
+                box-shadow: 0 24px 60px -16px rgba(0,0,0,.6),
+                            0 0 0 3px {color}20;
+                text-align: center; max-width: 520px; width: 100%; }}
+        .icon {{ font-size: 3.5rem; margin-bottom: 12px; }}
+        h1 {{ color: {color}; margin: 0 0 12px; font-size: 1.6rem;
+              font-weight: 800; letter-spacing: -.02em; }}
+        p {{ color: #d4d4d8; line-height: 1.55; margin: 0 0 18px; font-size: .98rem; }}
+        .pages-list {{ background: rgba(255,255,255,.03);
+                       border: 1px solid rgba(255,255,255,.08);
+                       border-radius: 12px; padding: 14px 16px;
+                       margin: 22px 0; text-align: left; }}
+        .pages-list-title {{ font-size: 11px; letter-spacing: 2px;
+                             color: #71717a; font-weight: 700; margin-bottom: 10px; }}
+        .page-row {{ display: flex; align-items: center; gap: 12px;
+                     padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.05); }}
+        .page-row:last-child {{ border-bottom: 0; }}
+        .fb-dot {{ flex-shrink: 0; width: 32px; height: 32px;
+                   background: #1877f2; color: white;
+                   font-weight: 800; font-size: 1.1rem;
+                   font-family: Georgia, serif;
+                   border-radius: 8px;
+                   display: flex; align-items: center; justify-content: center; }}
+        .page-info {{ flex: 1; display: flex; align-items: center;
+                      justify-content: space-between; gap: 12px; }}
+        .page-name {{ color: #fafafa; font-weight: 600; font-size: .95rem; }}
+        .ig-chip {{ background: linear-gradient(135deg, #fa7e1e, #d62976, #4f5bd5);
+                    color: white; font-size: .72rem; font-weight: 700;
+                    padding: 3px 9px; border-radius: 999px;
+                    letter-spacing: .03em; }}
+        .btn-primary {{ display: inline-block; background: linear-gradient(135deg,#ff2357,#e40014);
+                        color: white; border: 0; padding: 12px 24px;
+                        border-radius: 10px; cursor: pointer; font-size: .98rem;
+                        font-weight: 700; text-decoration: none;
+                        margin-top: 16px;
+                        box-shadow: 0 12px 28px -8px rgba(255,35,87,.55);
+                        transition: transform .15s ease, box-shadow .25s ease; }}
+        .btn-primary:hover {{ transform: translateY(-2px);
+                              box-shadow: 0 18px 36px -8px rgba(255,35,87,.7); }}
+        .btn-link {{ display: block; background: transparent;
+                     color: #71717a; border: 0; padding: 10px;
+                     cursor: pointer; font-size: .88rem;
+                     margin: 6px auto 0; font-family: inherit; }}
+        .btn-link:hover {{ color: #d4d4d8; }}
       </style>
     </head>
     <body>
       <div class="box">
         <div class="icon">{icon}</div>
-        <h1>{"Collegamento riuscito!" if ok else "Errore"}</h1>
+        <h1>{"Account collegato!" if ok else "Errore di collegamento"}</h1>
         <p>{message}</p>
-        <button onclick="window.close(); window.location.href='/';">
-          Chiudi e torna al pannello
-        </button>
+        {pages_html}
+        {cta_html}
       </div>
-      <script>
-        // Auto-close after 5s if window was opened by JS
-        setTimeout(() => {{
-          if (window.opener) {{ window.close(); }}
-          else {{ window.location.href = '/'; }}
-        }}, 5000);
-      </script>
     </body>
     </html>
     """

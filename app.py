@@ -377,6 +377,122 @@ h2, h3, .stSubheader {
     font-weight: 400;
     font-style: italic;
 }
+
+/* ── API Keys onboarding (Connect Facebook section) ──────────── */
+.pwr-connect-card {
+    padding: 28px 28px 22px !important;
+}
+.pwr-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+.pwr-check-item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+.pwr-check-num {
+    flex-shrink: 0;
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ff2357 0%, #e40014 100%);
+    color: white;
+    font-weight: 700;
+    font-size: .92rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px -4px rgba(255,35,87,.5);
+}
+.pwr-check-title {
+    color: #fafafa;
+    font-weight: 600;
+    font-size: .96rem;
+    margin-bottom: 3px;
+}
+.pwr-check-meta {
+    color: #a1a1aa;
+    font-size: .86rem;
+    line-height: 1.55;
+}
+.pwr-check-meta a { color: #ff667f; text-decoration: none; border-bottom: 1px solid rgba(255,102,127,.3); }
+.pwr-check-meta a:hover { border-bottom-color: #ff667f; }
+
+/* Big Facebook CTA button (the "Connect" call-to-action) */
+.pwr-fb-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 28px 14px 18px;
+    background: #1877f2;
+    color: white !important;
+    border-radius: 14px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    text-decoration: none;
+    box-shadow: 0 14px 32px -8px rgba(24,119,242,.6);
+    transition: transform .2s ease, box-shadow .25s ease;
+    border: 0;
+}
+.pwr-fb-cta:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 44px -8px rgba(24,119,242,.78);
+    color: white !important;
+}
+.pwr-fb-cta .pwr-acct-icon {
+    box-shadow: none !important;
+    background: rgba(255,255,255,.18) !important;
+}
+
+/* Privacy reassurance — 2 columns: what we do / what we don't */
+.pwr-privacy-box {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+.pwr-privacy-col {
+    padding: 18px 20px;
+    border-radius: 12px;
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+}
+.pwr-privacy-col.ok { border-left: 3px solid #22c55e; }
+.pwr-privacy-col.no { border-left: 3px solid #ef4444; }
+.pwr-privacy-title {
+    font-size: .78rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+.pwr-privacy-col.ok .pwr-privacy-title { color: #4ade80; }
+.pwr-privacy-col.no .pwr-privacy-title { color: #f87171; }
+.pwr-privacy-col ul {
+    margin: 0;
+    padding-left: 20px;
+    color: #a1a1aa;
+    font-size: .88rem;
+    line-height: 1.65;
+}
+.pwr-privacy-col li { margin-bottom: 6px; }
+.pwr-privacy-col a { color: #ff667f; text-decoration: none; }
+@media (max-width: 720px) {
+    .pwr-privacy-box { grid-template-columns: 1fr; }
+}
+
+/* Connected-state summary card */
+.pwr-connect-summary {
+    padding: 22px 24px !important;
+}
+.pwr-connect-summary .pwr-acct-icon {
+    box-shadow: 0 8px 22px -6px rgba(0,0,0,.5);
+}
 </style>
 """
 st.markdown(_WIZARD_CSS, unsafe_allow_html=True)
@@ -474,6 +590,43 @@ def _apply_user_api_keys(user: dict) -> None:
     for k, env_name in _API_KEY_MAPPING.items():
         if keys.get(k):
             os.environ[env_name] = keys[k]
+
+
+# ── Social icon rendering helpers (Instagram + Facebook) ────────────────────
+
+_SOCIAL_SVG_FB_PATH = (
+    'M22 12a10 10 0 10-11.6 9.9V14.9H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 '
+    '1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.7l-.4 2.9h-2.3V22A10 10 0 0022 12z'
+)
+
+_SOCIAL_SVG_IG_PATH = (
+    'M12 2.2c3.2 0 3.6 0 4.8.1 1.2.1 1.8.2 2.2.4.6.2 1 .5 1.4.9.4.4.7.8.9 1.4.2.4.4 1 '
+    '.4 2.2.1 1.2.1 1.6.1 4.8s0 3.6-.1 4.8c-.1 1.2-.2 1.8-.4 2.2-.2.6-.5 1-.9 1.4-.4.4-.8.7-1.4.9'
+    '-.4.2-1 .4-2.2.4-1.2.1-1.6.1-4.8.1s-3.6 0-4.8-.1c-1.2-.1-1.8-.2-2.2-.4-.6-.2-1-.5-1.4-.9'
+    '-.4-.4-.7-.8-.9-1.4-.2-.4-.4-1-.4-2.2-.1-1.2-.1-1.6-.1-4.8s0-3.6.1-4.8c.1-1.2.2-1.8.4-2.2'
+    '.2-.6.5-1 .9-1.4.4-.4.8-.7 1.4-.9.4-.2 1-.4 2.2-.4 1.2-.1 1.6-.1 4.8-.1zm0 2c-3.2 0-3.5 0-4.7.1'
+    '-1 .1-1.5.2-1.9.3-.5.2-.8.4-1.2.7-.3.3-.6.7-.7 1.2-.1.4-.3.9-.3 1.9-.1 1.2-.1 1.5-.1 4.7s0 '
+    '3.5.1 4.7c.1 1 .2 1.5.3 1.9.2.5.4.8.7 1.2.3.3.7.6 1.2.7.4.1.9.3 1.9.3 1.2.1 1.5.1 4.7.1s3.5 '
+    '0 4.7-.1c1-.1 1.5-.2 1.9-.3.5-.2.8-.4 1.2-.7.3-.3.6-.7.7-1.2.1-.4.3-.9.3-1.9.1-1.2.1-1.5.1-4.7s'
+    '0-3.5-.1-4.7c-.1-1-.2-1.5-.3-1.9-.2-.5-.4-.8-.7-1.2-.3-.3-.7-.6-1.2-.7-.4-.1-.9-.3-1.9-.3'
+    '-1.2-.1-1.5-.1-4.7-.1zm0 3.4a4.4 4.4 0 110 8.8 4.4 4.4 0 010-8.8zm0 7.3a2.9 2.9 0 100-5.8 '
+    '2.9 2.9 0 000 5.8zm5.6-7.5a1 1 0 110 2 1 1 0 010-2z'
+)
+
+
+def _social_icon(platform: str, size: int = 48) -> str:
+    """Return HTML for a circular branded icon (Instagram or Facebook)."""
+    inner = max(int(size * 0.46), 18)
+    paths = {"facebook": _SOCIAL_SVG_FB_PATH, "instagram": _SOCIAL_SVG_IG_PATH}
+    cls_map = {"facebook": "fb", "instagram": "ig"}
+    if platform not in paths:
+        return ""
+    return (
+        f'<div class="pwr-acct-icon {cls_map[platform]}" style="width:{size}px;height:{size}px;">'
+        f'<svg viewBox="0 0 24 24" fill="white" width="{inner}" height="{inner}">'
+        f'<path d="{paths[platform]}"/>'
+        f'</svg></div>'
+    )
 
 
 # ── Authentication + Landing Page ───────────────────────────────────────────
@@ -1081,38 +1234,156 @@ if st.session_state.view == "api_keys":
     st.divider()
 
     # ── Meta / Instagram / Facebook (OAuth — no manual token needed) ──
-    st.subheader("Instagram + Facebook")
-    st.caption(
-        "Per pubblicare i reel su Instagram e Facebook **non serve nessuna chiave**. "
-        "Basta cliccare 'Collega Facebook' e fare login con il tuo account social."
+    st.markdown(
+        '<div class="pwr-section-label">📡 Instagram + Facebook</div>',
+        unsafe_allow_html=True,
     )
 
     fb_page = current_keys.get("facebook_page_name") or current_keys.get("facebook_page_id")
     ig_user = current_keys.get("instagram_username")
+    meta_pages = current_keys.get("meta_pages", []) or []
+    is_connected = bool(fb_page or ig_user or meta_pages)
+    public_base = os.getenv("PUBLIC_BASE_URL", "")
+    oauth_url = (
+        f"{public_base}/oauth/facebook/start?email={st.session_state.user_email}"
+        if public_base else ""
+    )
 
-    col_status, col_action = st.columns([3, 1])
-    with col_status:
-        if fb_page:
-            st.success(f"✅ Pagina Facebook collegata: **{fb_page}**")
-        if ig_user:
-            st.success(f"✅ Instagram collegato: **@{ig_user}**")
-        if not fb_page and not ig_user:
-            st.info("Nessun account social ancora collegato.")
-    with col_action:
-        public_base = os.getenv("PUBLIC_BASE_URL", "")
-        if public_base:
-            oauth_url = f"{public_base}/oauth/facebook/start?email={st.session_state.user_email}"
-            label = "🔄 Riconnetti" if (fb_page or ig_user) else "🔗 Collega Facebook"
+    if is_connected:
+        # ── CONNECTED STATE: show summary + reconnect option ──
+        n_pages = len(meta_pages) if meta_pages else (1 if fb_page else 0)
+        n_ig = (
+            sum(1 for p in meta_pages if p.get("instagram_business_account_id"))
+            if meta_pages else (1 if ig_user else 0)
+        )
+
+        ig_summary = (
+            f', di cui <b style="color:#fafafa;">{n_ig} con Instagram</b>'
+            if n_ig else ""
+        )
+        st.markdown(
+            f'<div class="pwr-card pwr-connect-summary">'
+            f'  <div style="display:flex;align-items:center;gap:14px;">'
+            f'    {_social_icon("facebook", 56)}'
+            f'    {_social_icon("instagram", 56)}'
+            f'    <div style="margin-left:8px;flex:1;">'
+            f'      <div style="font-size:1.2rem;font-weight:700;color:#22c55e;">✓ Connesso</div>'
+            f'      <div style="font-size:.92rem;color:#a1a1aa;margin-top:2px;">'
+            f'        <b style="color:#fafafa;">{n_pages} pagin{"e" if n_pages != 1 else "a"} Facebook</b>'
+            f'        {ig_summary}'
+            f'      </div>'
+            f'    </div>'
+            f'  </div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if oauth_url:
+                st.markdown(
+                    f'<a href="{oauth_url}" target="_blank" '
+                    f'style="display:block;padding:12px;border:1px solid rgba(255,255,255,.18);'
+                    f'color:#a1a1aa;text-align:center;border-radius:10px;text-decoration:none;'
+                    f'font-weight:500;margin-top:14px;">'
+                    f'🔄 Riconnetti / aggiungi pagine</a>',
+                    unsafe_allow_html=True,
+                )
+        with c2:
+            if st.button("📋 Vai allo Step 6 → scegli pagine",
+                         use_container_width=True, type="primary"):
+                st.session_state.view = "wizard"
+                st.session_state.step = 6
+                st.rerun()
+    else:
+        # ── NOT CONNECTED: pre-flight checklist + CTA + privacy reassurance ──
+        st.markdown(
+            '<div class="pwr-card pwr-connect-card">'
+            '  <h3 style="margin:0 0 8px;color:#fafafa;font-size:1.4rem;">'
+            '    Connetti Instagram + Facebook in un click'
+            '  </h3>'
+            '  <p style="color:#a1a1aa;margin:0 0 22px;font-size:.97rem;">'
+            '    Nessuna API key da copiare, nessun setup tecnico. '
+            '    <b style="color:#fafafa;">Bastano 3 cose</b> che probabilmente hai già.'
+            '  </p>'
+            '  <div class="pwr-checklist">'
+            '    <div class="pwr-check-item">'
+            '      <span class="pwr-check-num">1</span>'
+            '      <div>'
+            '        <div class="pwr-check-title">Un account Facebook</div>'
+            '        <div class="pwr-check-meta">'
+            '          Anche personale — non serve un Business Manager né una Meta App tua. '
+            '          POWEREEL usa la sua.'
+            '        </div>'
+            '      </div>'
+            '    </div>'
+            '    <div class="pwr-check-item">'
+            '      <span class="pwr-check-num">2</span>'
+            '      <div>'
+            '        <div class="pwr-check-title">Almeno una Pagina Facebook</div>'
+            '        <div class="pwr-check-meta">'
+            '          Gratis, 30 secondi a crearla → '
+            '          <a href="https://www.facebook.com/pages/create" target="_blank">'
+            '          fb.com/pages/create</a>'
+            '        </div>'
+            '      </div>'
+            '    </div>'
+            '    <div class="pwr-check-item">'
+            '      <span class="pwr-check-num">3</span>'
+            '      <div>'
+            '        <div class="pwr-check-title">Instagram Business o Creator</div>'
+            '        <div class="pwr-check-meta">'
+            '          Collegato alla tua Pagina FB → '
+            '          <a href="https://help.instagram.com/502981923235522" target="_blank">'
+            '          guida ufficiale Meta</a>'
+            '        </div>'
+            '      </div>'
+            '    </div>'
+            '  </div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        if oauth_url:
             st.markdown(
-                f'<a href="{oauth_url}" target="_blank" '
-                f'style="display:block; padding:10px; background:#1877F2; color:white; '
-                f'text-align:center; border-radius:8px; text-decoration:none; font-weight:bold;">'
-                f'{label}</a>',
+                f'<div style="text-align:center;margin:22px 0 8px;">'
+                f'  <a href="{oauth_url}" target="_blank" class="pwr-fb-cta">'
+                f'    {_social_icon("facebook", 36)}'
+                f'    <span>Collega il mio Facebook</span>'
+                f'  </a>'
+                f'  <p style="color:#71717a;font-size:.85rem;margin:14px 0 0;line-height:1.5;">'
+                f'    Si aprirà una pagina di Facebook per autorizzarci.<br>'
+                f'    <b style="color:#a1a1aa;">Login solo su facebook.com</b>, mai su POWEREEL.'
+                f'  </p>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
-            st.caption("Si apre una nuova scheda")
         else:
             st.warning("OAuth non configurato (manca PUBLIC_BASE_URL)")
+
+        # Privacy reassurance — what we do / what we don't
+        st.markdown(
+            '<div class="pwr-privacy-box" style="margin-top:24px;">'
+            '  <div class="pwr-privacy-col ok">'
+            '    <div class="pwr-privacy-title">✓ Cosa fa POWEREEL</div>'
+            '    <ul>'
+            '      <li>Riceve solo un <b>token revocabile</b> dopo la tua autorizzazione</li>'
+            '      <li>Pubblica i reel <b>a tuo nome</b>, rispettando i limiti Instagram</li>'
+            '      <li>Funziona finché non revochi l\'accesso da '
+            '          <a href="https://accountscenter.facebook.com" target="_blank">Centro account Meta</a></li>'
+            '    </ul>'
+            '  </div>'
+            '  <div class="pwr-privacy-col no">'
+            '    <div class="pwr-privacy-title">✗ Cosa NON fa</div>'
+            '    <ul>'
+            '      <li><b>Non vede mai</b> la tua password</li>'
+            '      <li><b>Non legge</b> i tuoi messaggi privati</li>'
+            '      <li><b>Non posta</b> nulla che tu non abbia approvato dal pannello</li>'
+            '    </ul>'
+            '  </div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
     st.divider()
     st.info("💡 Non sai come ottenere queste chiavi? Vai su **Guida Setup** dalla sidebar.")
@@ -1961,22 +2232,12 @@ elif st.session_state.step == 6:
                     klass = "pwr-card pwr-account-card" + (" selected" if is_selected else "")
                     active_pill = '<div class="pwr-active-pill">✓ ATTIVO</div>' if is_selected else ""
 
-                    # Inline SVG icons (Instagram + Facebook). Pure CSS gradient backgrounds.
-                    ig_icon = (
-                        '<div class="pwr-acct-icon ig"><svg viewBox="0 0 24 24" fill="white" width="22" height="22">'
-                        '<path d="M12 2.2c3.2 0 3.6 0 4.8.1 1.2.1 1.8.2 2.2.4.6.2 1 .5 1.4.9.4.4.7.8.9 1.4.2.4.4 1 .4 2.2.1 1.2.1 1.6.1 4.8s0 3.6-.1 4.8c-.1 1.2-.2 1.8-.4 2.2-.2.6-.5 1-.9 1.4-.4.4-.8.7-1.4.9-.4.2-1 .4-2.2.4-1.2.1-1.6.1-4.8.1s-3.6 0-4.8-.1c-1.2-.1-1.8-.2-2.2-.4-.6-.2-1-.5-1.4-.9-.4-.4-.7-.8-.9-1.4-.2-.4-.4-1-.4-2.2-.1-1.2-.1-1.6-.1-4.8s0-3.6.1-4.8c.1-1.2.2-1.8.4-2.2.2-.6.5-1 .9-1.4.4-.4.8-.7 1.4-.9.4-.2 1-.4 2.2-.4 1.2-.1 1.6-.1 4.8-.1zm0 2c-3.2 0-3.5 0-4.7.1-1 .1-1.5.2-1.9.3-.5.2-.8.4-1.2.7-.3.3-.6.7-.7 1.2-.1.4-.3.9-.3 1.9-.1 1.2-.1 1.5-.1 4.7s0 3.5.1 4.7c.1 1 .2 1.5.3 1.9.2.5.4.8.7 1.2.3.3.7.6 1.2.7.4.1.9.3 1.9.3 1.2.1 1.5.1 4.7.1s3.5 0 4.7-.1c1-.1 1.5-.2 1.9-.3.5-.2.8-.4 1.2-.7.3-.3.6-.7.7-1.2.1-.4.3-.9.3-1.9.1-1.2.1-1.5.1-4.7s0-3.5-.1-4.7c-.1-1-.2-1.5-.3-1.9-.2-.5-.4-.8-.7-1.2-.3-.3-.7-.6-1.2-.7-.4-.1-.9-.3-1.9-.3-1.2-.1-1.5-.1-4.7-.1zm0 3.4a4.4 4.4 0 110 8.8 4.4 4.4 0 010-8.8zm0 7.3a2.9 2.9 0 100-5.8 2.9 2.9 0 000 5.8zm5.6-7.5a1 1 0 110 2 1 1 0 010-2z"/>'
-                        '</svg></div>'
-                    )
-                    fb_icon = (
-                        '<div class="pwr-acct-icon fb"><svg viewBox="0 0 24 24" fill="white" width="22" height="22">'
-                        '<path d="M22 12a10 10 0 10-11.6 9.9V14.9H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.7l-.4 2.9h-2.3V22A10 10 0 0022 12z"/>'
-                        '</svg></div>'
-                    )
-
-                    # Compose icon row: always show FB; show IG as a smaller chip if linked
+                    # Compose icon row using the shared helper. Always show FB;
+                    # show IG only if the page has a linked Instagram Business.
                     icon_block = (
-                        f'<div class="pwr-acct-icon-row">{fb_icon}'
-                        f'{ig_icon if has_ig else ""}'
+                        f'<div class="pwr-acct-icon-row">'
+                        f'{_social_icon("facebook", 56)}'
+                        f'{_social_icon("instagram", 56) if has_ig else ""}'
                         f'</div>'
                     )
 
