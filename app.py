@@ -320,6 +320,63 @@ h2, h3, .stSubheader {
     border-radius: 12px;
     padding: 12px 14px;
 }
+
+/* ── Account cards (Step 6) ───────────────────────────────────── */
+.pwr-account-card .pwr-acct-banner {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 11px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.pwr-acct-icon-row {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    z-index: 1;
+}
+.pwr-acct-icon {
+    width: 56px; height: 56px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 28px -8px rgba(0,0,0,.6);
+    transition: transform .25s ease, box-shadow .25s ease;
+}
+.pwr-acct-icon.fb {
+    background: #1877f2;
+    box-shadow: 0 10px 28px -8px rgba(24,119,242,.5);
+}
+.pwr-acct-icon.ig {
+    background:
+        radial-gradient(circle at 30% 110%, #fdcb52 0%, #fa7e1e 12%, #d62976 38%,
+                        #962fbf 60%, #4f5bd5 100%);
+    box-shadow: 0 10px 28px -8px rgba(214,41,118,.55);
+}
+.pwr-account-card:hover .pwr-acct-icon { transform: scale(1.06); }
+
+.pwr-account-card.selected .pwr-acct-banner {
+    background:
+        radial-gradient(ellipse at 50% 0%, rgba(255,35,87,.18) 0%, transparent 70%),
+        linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
+}
+
+.pwr-acct-ig-label {
+    color: #ff667f;
+    font-weight: 600;
+    font-size: .85rem;
+    letter-spacing: .02em;
+}
+.pwr-acct-ig-label.muted {
+    color: #71717a;
+    font-weight: 400;
+    font-style: italic;
+}
 </style>
 """
 st.markdown(_WIZARD_CSS, unsafe_allow_html=True)
@@ -739,6 +796,34 @@ def run_pipeline_background(dry_run: bool):
     if DONE_MARKER.exists():
         DONE_MARKER.unlink()
     RUN_MARKER.write_text(str(time.time()))
+
+    # Build the multi-account publish targets list and inject it into env
+    # (subprocess inherits parent env). Pipeline reads META_PUBLISH_TARGETS
+    # to know which Meta pages/IG accounts to publish to.
+    import json as _json
+    user_email = st.session_state.get("user_email", "")
+    if user_email and not dry_run:
+        u = _users.get_user(user_email) or {}
+        u_keys = u.get("api_keys", {}) or {}
+        meta_pages = u_keys.get("meta_pages", []) or []
+        # Synth from legacy fields if needed
+        if not meta_pages and (u_keys.get("facebook_page_id") or u_keys.get("instagram_business_account_id")):
+            meta_pages = [{
+                "page_id": u_keys.get("facebook_page_id", ""),
+                "page_name": u_keys.get("facebook_page_name", "") or "Facebook Page",
+                "page_access_token": u_keys.get("facebook_page_access_token", ""),
+                "instagram_business_account_id": u_keys.get("instagram_business_account_id", ""),
+                "instagram_username": u_keys.get("instagram_username", ""),
+            }]
+        # Filter to selected
+        sel_ids = set(settings.get("publisher", {}).get("selected_pages", []))
+        targets = [p for p in meta_pages if p["page_id"] in sel_ids]
+        # If user hasn't picked anything but has accounts, default to ALL
+        if not targets and meta_pages and not sel_ids:
+            targets = meta_pages
+        os.environ["META_PUBLISH_TARGETS"] = _json.dumps(targets)
+    else:
+        os.environ.pop("META_PUBLISH_TARGETS", None)
 
     # Wrapper script that runs pipeline + writes DONE marker at the end
     wrapper = (
@@ -1792,80 +1877,174 @@ elif st.session_state.step == 5:
 # ── STEP 6: Instagram ────────────────────────────────────────────────────────
 
 elif st.session_state.step == 6:
-    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[6]}</h1>', unsafe_allow_html=True)
-    st.caption("Scegli su quali social pubblicare e configura la caption")
-
-    # ── Platform selection ──
-    st.subheader("📡 Piattaforme di pubblicazione")
+    st.markdown(
+        f'<h1 class="pwr-h1" translate="no" lang="it">{STEP_TITLES[6]}</h1>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="pwr-caption">Scegli su quali account pubblicare. Selezionane uno o tutti — un click pubblica ovunque.</div>',
+        unsafe_allow_html=True,
+    )
 
     publisher_cfg = settings.setdefault("publisher", {})
     enabled = publisher_cfg.get("enabled_platforms", ["instagram"])
 
-    # Pull current connection info from user profile (set by OAuth flow)
     user_profile = _users.get_user(st.session_state.user_email) or {}
     user_keys = user_profile.get("api_keys", {})
-    ig_id = user_keys.get("instagram_business_account_id", "") or os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
-    ig_user = user_keys.get("instagram_username", "")
-    fb_id = user_keys.get("facebook_page_id", "") or os.getenv("FACEBOOK_PAGE_ID", "")
-    fb_name = user_keys.get("facebook_page_name", "")
+    meta_pages = user_keys.get("meta_pages", [])
 
-    col_ig, col_fb = st.columns(2)
+    # Back-compat: if no meta_pages list yet, build a synthetic one from legacy fields
+    if not meta_pages:
+        legacy_fb = user_keys.get("facebook_page_id", "")
+        legacy_ig = user_keys.get("instagram_business_account_id", "")
+        if legacy_fb or legacy_ig:
+            meta_pages = [{
+                "page_id": legacy_fb,
+                "page_name": user_keys.get("facebook_page_name", "") or "Facebook Page",
+                "page_access_token": user_keys.get("facebook_page_access_token", ""),
+                "instagram_business_account_id": legacy_ig,
+                "instagram_username": user_keys.get("instagram_username", ""),
+            }]
 
-    with col_ig:
-        ig_active = "instagram" in enabled
-        ig_disabled = not ig_id
-        ig_toggle = st.toggle(
-            "📱 Instagram Reels",
-            value=ig_active and not ig_disabled,
-            disabled=ig_disabled,
-            key="toggle_ig",
+    # First-visit default: auto-select all available pages so the user can
+    # proceed without clicking on every card. They can deselect from the UI.
+    if "selected_pages" not in publisher_cfg and meta_pages:
+        publisher_cfg["selected_pages"] = [p["page_id"] for p in meta_pages]
+        save_settings(settings)
+    selected_page_ids = set(publisher_cfg.get("selected_pages", []))
+
+    # ── Account cards ──
+    st.markdown(
+        '<div class="pwr-section-label">📡 Step 6 · Account collegati</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not meta_pages:
+        st.warning(
+            "Nessun account collegato. Vai su **🔑 Configura API Keys → Collega Facebook** "
+            "per autorizzare le tue Pagine FB e gli account Instagram Business."
         )
-        if ig_id:
-            label = f"@{ig_user}" if ig_user else f"ID: {ig_id}"
-            st.caption(f"✅ Account collegato: **{label}**")
-        else:
-            st.caption("⚠️ Non collegato. Vai su 🔑 Configura API Keys → Collega Facebook")
+    else:
+        # Quick action toolbar — select all / none
+        tool_cols = st.columns([1, 1, 6])
+        with tool_cols[0]:
+            if st.button("✓ Tutti", key="sel_all", use_container_width=True):
+                selected_page_ids = {p["page_id"] for p in meta_pages}
+                publisher_cfg["selected_pages"] = list(selected_page_ids)
+                save_settings(settings)
+                st.rerun()
+        with tool_cols[1]:
+            if st.button("✗ Nessuno", key="sel_none", use_container_width=True):
+                selected_page_ids = set()
+                publisher_cfg["selected_pages"] = []
+                save_settings(settings)
+                st.rerun()
+        with tool_cols[2]:
+            n_sel = len(selected_page_ids & {p["page_id"] for p in meta_pages})
+            st.markdown(
+                f'<div style="padding:10px 4px; color:#a1a1aa; font-size:.9rem;">'
+                f'<b style="color:#fafafa;">{n_sel}</b> di <b>{len(meta_pages)}</b> account selezionat{"i" if n_sel != 1 else "o"} per la pubblicazione'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
-    with col_fb:
-        fb_active = "facebook" in enabled
-        fb_disabled = not fb_id
-        fb_toggle = st.toggle(
-            "👥 Facebook Reels",
-            value=fb_active and not fb_disabled,
-            disabled=fb_disabled,
-            key="toggle_fb",
-        )
-        if fb_id:
-            label = fb_name if fb_name else f"ID: {fb_id}"
-            st.caption(f"✅ Pagina collegata: **{label}**")
-        else:
-            st.caption("⚠️ Non collegata. Vai su 🔑 Configura API Keys → Collega Facebook")
+        # Per-page cards
+        cols_per_row = 4
+        for row_start in range(0, len(meta_pages), cols_per_row):
+            row_pages = meta_pages[row_start:row_start + cols_per_row]
+            cols = st.columns(cols_per_row)
+            for i, page in enumerate(row_pages):
+                with cols[i]:
+                    pid = page["page_id"]
+                    is_selected = pid in selected_page_ids
+                    has_ig = bool(page.get("instagram_business_account_id"))
+                    klass = "pwr-card pwr-account-card" + (" selected" if is_selected else "")
+                    active_pill = '<div class="pwr-active-pill">✓ ATTIVO</div>' if is_selected else ""
 
+                    # Inline SVG icons (Instagram + Facebook). Pure CSS gradient backgrounds.
+                    ig_icon = (
+                        '<div class="pwr-acct-icon ig"><svg viewBox="0 0 24 24" fill="white" width="22" height="22">'
+                        '<path d="M12 2.2c3.2 0 3.6 0 4.8.1 1.2.1 1.8.2 2.2.4.6.2 1 .5 1.4.9.4.4.7.8.9 1.4.2.4.4 1 .4 2.2.1 1.2.1 1.6.1 4.8s0 3.6-.1 4.8c-.1 1.2-.2 1.8-.4 2.2-.2.6-.5 1-.9 1.4-.4.4-.8.7-1.4.9-.4.2-1 .4-2.2.4-1.2.1-1.6.1-4.8.1s-3.6 0-4.8-.1c-1.2-.1-1.8-.2-2.2-.4-.6-.2-1-.5-1.4-.9-.4-.4-.7-.8-.9-1.4-.2-.4-.4-1-.4-2.2-.1-1.2-.1-1.6-.1-4.8s0-3.6.1-4.8c.1-1.2.2-1.8.4-2.2.2-.6.5-1 .9-1.4.4-.4.8-.7 1.4-.9.4-.2 1-.4 2.2-.4 1.2-.1 1.6-.1 4.8-.1zm0 2c-3.2 0-3.5 0-4.7.1-1 .1-1.5.2-1.9.3-.5.2-.8.4-1.2.7-.3.3-.6.7-.7 1.2-.1.4-.3.9-.3 1.9-.1 1.2-.1 1.5-.1 4.7s0 3.5.1 4.7c.1 1 .2 1.5.3 1.9.2.5.4.8.7 1.2.3.3.7.6 1.2.7.4.1.9.3 1.9.3 1.2.1 1.5.1 4.7.1s3.5 0 4.7-.1c1-.1 1.5-.2 1.9-.3.5-.2.8-.4 1.2-.7.3-.3.6-.7.7-1.2.1-.4.3-.9.3-1.9.1-1.2.1-1.5.1-4.7s0-3.5-.1-4.7c-.1-1-.2-1.5-.3-1.9-.2-.5-.4-.8-.7-1.2-.3-.3-.7-.6-1.2-.7-.4-.1-.9-.3-1.9-.3-1.2-.1-1.5-.1-4.7-.1zm0 3.4a4.4 4.4 0 110 8.8 4.4 4.4 0 010-8.8zm0 7.3a2.9 2.9 0 100-5.8 2.9 2.9 0 000 5.8zm5.6-7.5a1 1 0 110 2 1 1 0 010-2z"/>'
+                        '</svg></div>'
+                    )
+                    fb_icon = (
+                        '<div class="pwr-acct-icon fb"><svg viewBox="0 0 24 24" fill="white" width="22" height="22">'
+                        '<path d="M22 12a10 10 0 10-11.6 9.9V14.9H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.7l-.4 2.9h-2.3V22A10 10 0 0022 12z"/>'
+                        '</svg></div>'
+                    )
+
+                    # Compose icon row: always show FB; show IG as a smaller chip if linked
+                    icon_block = (
+                        f'<div class="pwr-acct-icon-row">{fb_icon}'
+                        f'{ig_icon if has_ig else ""}'
+                        f'</div>'
+                    )
+
+                    fb_label = page.get("page_name") or page["page_id"]
+                    ig_label = (
+                        f'<div class="pwr-acct-ig-label">@{page["instagram_username"] or "ig"}</div>'
+                        if has_ig else
+                        '<div class="pwr-acct-ig-label muted">Solo Facebook (no IG)</div>'
+                    )
+
+                    st.markdown(
+                        f'<div class="{klass}">'
+                        f'  <div class="pwr-acct-banner">{active_pill}{icon_block}</div>'
+                        f'  <div class="pwr-card-name">{fb_label}</div>'
+                        f'  <div class="pwr-card-meta">{ig_label}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    btn_label = "✓ Pubblica qui" if is_selected else "Attiva pubblicazione"
+                    if st.button(
+                        btn_label,
+                        key=f"page_toggle_{pid}",
+                        use_container_width=True,
+                        type="primary" if is_selected else "secondary",
+                    ):
+                        if is_selected:
+                            selected_page_ids.discard(pid)
+                        else:
+                            selected_page_ids.add(pid)
+                        publisher_cfg["selected_pages"] = list(selected_page_ids)
+                        save_settings(settings)
+                        st.rerun()
+
+    # Save derived enabled_platforms (compat with existing pipeline) + selected_pages
+    has_ig_selected = any(
+        p["page_id"] in selected_page_ids and p.get("instagram_business_account_id")
+        for p in meta_pages
+    )
+    has_fb_selected = any(p["page_id"] in selected_page_ids for p in meta_pages)
     new_enabled = []
-    if ig_toggle and ig_id:
+    if has_ig_selected:
         new_enabled.append("instagram")
-    if fb_toggle and fb_id:
+    if has_fb_selected:
         new_enabled.append("facebook")
     publisher_cfg["enabled_platforms"] = new_enabled
 
     st.divider()
 
     # ── Caption template ──
-    st.subheader("📝 Caption")
+    st.markdown(
+        '<div class="pwr-section-label">📝 Caption del reel</div>',
+        unsafe_allow_html=True,
+    )
     publisher_cfg["caption_template"] = st.text_area(
         "Template Caption (usa {summary_bullets} per le notizie)",
         publisher_cfg.get("caption_template", ""), height=180,
+        label_visibility="visible",
     )
-    st.caption("La stessa caption viene usata per tutte le piattaforme abilitate.")
+    st.caption("La stessa caption viene usata per tutti gli account selezionati.")
 
-    if st.button("💾 Salva", type="secondary"):
+    if st.button("💾 Salva caption", type="secondary"):
         save_settings(settings)
         st.success("Salvato")
 
     st.divider()
-    can_proceed = len(new_enabled) > 0
+    can_proceed = len(selected_page_ids) > 0
     if not can_proceed:
-        st.warning("Seleziona almeno una piattaforma per proseguire")
+        st.warning("Seleziona almeno un account per proseguire")
     nav_buttons(6, can_proceed)
 
 

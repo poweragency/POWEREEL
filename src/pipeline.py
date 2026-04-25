@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -135,20 +136,13 @@ def run_pipeline(
                 raise FileNotFoundError(f"Video finale non trovato: {final_path}")
             logger.info("Video finale caricato da run precedente")
 
-        # ── Stage 5: Publishing (multi-platform) ──────────────────────
+        # ── Stage 5: Publishing (multi-platform, multi-account) ───────
         if start_index <= 4:
             if dry_run:
                 logger.info("── Stage 5/5: SKIP (dry-run) ──")
                 logger.info("Video finale pronto: %s", final_path)
             else:
                 from .auth import check_and_refresh_token
-
-                platforms = config.publisher.enabled_platforms or ["instagram"]
-                logger.info(
-                    "── Stage 5/5: Pubblicazione su %d piattaform%s: %s ──",
-                    len(platforms), "e" if len(platforms) > 1 else "a",
-                    ", ".join(platforms),
-                )
 
                 # Single token refresh — all Meta platforms use it
                 token = check_and_refresh_token(
@@ -157,35 +151,96 @@ def run_pipeline(
                     config.meta_app_secret,
                 )
 
-                # ── Instagram ──
-                if "instagram" in platforms:
+                # Multi-account mode: app.py serializes the user-selected pages
+                # (each with its own page_access_token) into this env var before
+                # launching the pipeline subprocess. When present, we publish to
+                # each selected account's IG (if linked) and FB Page.
+                targets_json = os.environ.get("META_PUBLISH_TARGETS", "").strip()
+                targets = []
+                if targets_json:
                     try:
-                        from .publishers.instagram import publish_to_instagram
-                        ig_id = publish_to_instagram(
-                            final_path, articles, config.publisher,
-                            config.instagram_business_account_id, token,
-                        )
-                        publish_results["instagram"] = ig_id
-                        publish_id = ig_id  # legacy field
-                        logger.info("Instagram OK: media_id=%s", ig_id)
+                        targets = json.loads(targets_json)
                     except Exception as e:
-                        publish_results["instagram"] = f"error: {e}"
-                        logger.exception("Instagram publish FAILED")
+                        logger.warning("META_PUBLISH_TARGETS parse failed: %s", e)
+                        targets = []
 
-                # ── Facebook ──
-                if "facebook" in platforms:
-                    try:
-                        from .publishers.facebook import publish_to_facebook
-                        fb_id = publish_to_facebook(
-                            final_path, articles, config.publisher,
-                            config.facebook_page_id, token,
-                            page_access_token=config.facebook_page_access_token,
-                        )
-                        publish_results["facebook"] = fb_id
-                        logger.info("Facebook OK: video_id=%s", fb_id)
-                    except Exception as e:
-                        publish_results["facebook"] = f"error: {e}"
-                        logger.exception("Facebook publish FAILED")
+                if targets:
+                    logger.info(
+                        "── Stage 5/5: Pubblicazione su %d account selezionat%s ──",
+                        len(targets), "i" if len(targets) != 1 else "o",
+                    )
+                    for tgt in targets:
+                        page_name = tgt.get("page_name", "?")
+                        page_id = tgt.get("page_id", "")
+                        page_token = tgt.get("page_access_token", "") or token
+                        ig_acct = tgt.get("instagram_business_account_id", "")
+                        ig_user = tgt.get("instagram_username", "")
+
+                        # Instagram (only if account has IG linked)
+                        if ig_acct:
+                            try:
+                                from .publishers.instagram import publish_to_instagram
+                                media_id = publish_to_instagram(
+                                    final_path, articles, config.publisher,
+                                    ig_acct, token,
+                                )
+                                publish_results[f"ig:@{ig_user or ig_acct}"] = media_id
+                                if not publish_id:
+                                    publish_id = media_id  # first success → legacy field
+                                logger.info("✓ IG @%s: %s", ig_user or ig_acct, media_id)
+                            except Exception as e:
+                                publish_results[f"ig:@{ig_user or ig_acct}"] = f"error: {e}"
+                                logger.exception("✗ IG @%s FAILED", ig_user or ig_acct)
+
+                        # Facebook Page
+                        if page_id:
+                            try:
+                                from .publishers.facebook import publish_to_facebook
+                                fb_id = publish_to_facebook(
+                                    final_path, articles, config.publisher,
+                                    page_id, token,
+                                    page_access_token=page_token,
+                                )
+                                publish_results[f"fb:{page_name}"] = fb_id
+                                logger.info("✓ FB %s: %s", page_name, fb_id)
+                            except Exception as e:
+                                publish_results[f"fb:{page_name}"] = f"error: {e}"
+                                logger.exception("✗ FB %s FAILED", page_name)
+                else:
+                    # Legacy single-account fallback
+                    platforms = config.publisher.enabled_platforms or ["instagram"]
+                    logger.info(
+                        "── Stage 5/5: Pubblicazione (legacy single-account): %s ──",
+                        ", ".join(platforms),
+                    )
+
+                    if "instagram" in platforms:
+                        try:
+                            from .publishers.instagram import publish_to_instagram
+                            ig_id = publish_to_instagram(
+                                final_path, articles, config.publisher,
+                                config.instagram_business_account_id, token,
+                            )
+                            publish_results["instagram"] = ig_id
+                            publish_id = ig_id
+                            logger.info("Instagram OK: media_id=%s", ig_id)
+                        except Exception as e:
+                            publish_results["instagram"] = f"error: {e}"
+                            logger.exception("Instagram publish FAILED")
+
+                    if "facebook" in platforms:
+                        try:
+                            from .publishers.facebook import publish_to_facebook
+                            fb_id = publish_to_facebook(
+                                final_path, articles, config.publisher,
+                                config.facebook_page_id, token,
+                                page_access_token=config.facebook_page_access_token,
+                            )
+                            publish_results["facebook"] = fb_id
+                            logger.info("Facebook OK: video_id=%s", fb_id)
+                        except Exception as e:
+                            publish_results["facebook"] = f"error: {e}"
+                            logger.exception("Facebook publish FAILED")
 
         # ── Cleanup ───────────────────────────────────────────────────
         from .storage import cleanup_old_runs

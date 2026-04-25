@@ -210,14 +210,29 @@ async def fb_oauth_callback(code: str = "", state: str = "", error: str = "",
                         "Crea una Pagina FB prima di collegare.",
             )
 
-        # Auto-pick first page that has IG, otherwise first page
+        # Build the full list of pages (multi-account support).
+        # Each entry has the FB Page + its linked IG (if any) — user picks which
+        # to publish to in Step 6.
+        meta_pages = []
+        for p in pages:
+            ig = p["instagram_business_account"]
+            meta_pages.append({
+                "page_id": p["page_id"],
+                "page_name": p["page_name"],
+                "page_access_token": p["page_access_token"],
+                "instagram_business_account_id": ig["id"] if ig else "",
+                "instagram_username": ig.get("username", "") if ig else "",
+            })
+
+        # Legacy single-account fields: keep populated for back-compat with the
+        # existing pipeline (reads instagram_business_account_id directly).
         chosen = next((p for p in pages if p["instagram_business_account"]), pages[0])
         ig = chosen["instagram_business_account"]
 
-        # Save to user profile
         keys_to_save = {
             "meta_access_token": user_token,
             "meta_token_expires_at": int(time.time()) + int(expires_in),
+            "meta_pages": meta_pages,
             "facebook_page_id": chosen["page_id"],
             "facebook_page_name": chosen["page_name"],
             "facebook_page_access_token": chosen["page_access_token"],
@@ -228,9 +243,12 @@ async def fb_oauth_callback(code: str = "", state: str = "", error: str = "",
 
         _users.update_user_keys(email, keys_to_save)
 
-        msg = f"Pagina connessa: <b>{chosen['page_name']}</b>"
-        if ig:
-            msg += f"<br>Instagram: <b>@{ig.get('username', '?')}</b>"
+        ig_count = sum(1 for p in meta_pages if p["instagram_business_account_id"])
+        msg = (
+            f"<b>{len(meta_pages)} pagin{'e' if len(meta_pages) != 1 else 'a'} Facebook</b> "
+            f"connesse, di cui <b>{ig_count} con Instagram</b>.<br>"
+            f"Vai allo <i>Step 6 · Distribuzione Social</i> per scegliere su quali pubblicare."
+        )
         return _oauth_done_html(ok=True, message=msg)
 
     except Exception as e:

@@ -10,6 +10,7 @@ anthropic>=0.40
 # Video editing
 moviepy>=2.0
 Pillow>=10.0
+pilmoji>=2.0  # Apple-style emoji rendering on PIL images
 
 # Scheduling
 apscheduler>=3.10

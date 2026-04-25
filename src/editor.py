@@ -205,28 +205,18 @@ def _render_subtitle_nicktrading(
     stroke_w = stroke_width
     line_gap = 18
 
-    # Emoji rendered above (use bigger system font for emoji rendering)
+    # Emoji rendered above (use pilmoji + AppleEmojiSource → real iOS-style PNGs)
     emoji_height = 0
     emoji_font = None
     if emoji:
         emoji_size = int(font_size * 1.3)
         emoji_height = emoji_size + 20
-        # Try common emoji fonts
-        for emoji_font_path in [
-            "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
-            "C:/Windows/Fonts/seguiemj.ttf",
-            "/System/Library/Fonts/Apple Color Emoji.ttc",
-        ]:
-            try:
-                emoji_font = ImageFont.truetype(emoji_font_path, emoji_size)
-                break
-            except Exception:
-                continue
-        if emoji_font is None:
-            try:
-                emoji_font = ImageFont.truetype(font_path, emoji_size)
-            except Exception:
-                emoji_font = font
+        # Pilmoji replaces emoji codepoints with PNG images, so the font is just
+        # used for sizing reference — we use the body font for that.
+        try:
+            emoji_font = ImageFont.truetype(font_path, emoji_size)
+        except Exception:
+            emoji_font = font
 
     extra_w = box_pad_x * 2 + stroke_w * 2 + 40
     img_width = int(max_line_width + extra_w)
@@ -242,15 +232,26 @@ def _render_subtitle_nicktrading(
 
     y_text = stroke_w + box_pad_y + 5
 
-    # Render emoji above the text, centered
+    # Render emoji above the text, centered (Apple-style PNGs via pilmoji)
     if emoji and emoji_font is not None:
         try:
-            ebbox = draw.textbbox((0, 0), emoji, font=emoji_font, embedded_color=True)
-            ew = ebbox[2] - ebbox[0]
-            ex = (img_width - ew) / 2
-            draw.text((ex, y_text), emoji, font=emoji_font, embedded_color=True)
+            from pilmoji import Pilmoji
+            from pilmoji.source import AppleEmojiSource
+
+            with Pilmoji(img, source=AppleEmojiSource) as p:
+                # pilmoji.getsize returns (w, h) for the rendered text+emojis
+                ew, _eh = p.getsize(emoji, font=emoji_font)
+                ex = (img_width - ew) / 2
+                p.text((int(ex), int(y_text)), emoji, font=emoji_font, fill=(255, 255, 255, 255))
         except Exception:
-            pass
+            # Fallback to PIL embedded color (Noto/Segoe if available)
+            try:
+                ebbox = draw.textbbox((0, 0), emoji, font=emoji_font, embedded_color=True)
+                ew = ebbox[2] - ebbox[0]
+                ex = (img_width - ew) / 2
+                draw.text((ex, y_text), emoji, font=emoji_font, embedded_color=True)
+            except Exception:
+                pass
         y_text += emoji_height
 
     for line in lines:
