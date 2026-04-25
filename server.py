@@ -287,10 +287,13 @@ async def proxy_to_streamlit(path: str, request: Request):
     if qs:
         url += "?" + qs
 
-    # Filter hop-by-hop headers
+    # Filter hop-by-hop headers.
+    # content-encoding/content-length are stripped because httpx auto-decompresses
+    # resp.content; passing the original gzip headers would make the browser try to
+    # gunzip already-decompressed bytes (→ blank page).
     hop_by_hop = {"connection", "keep-alive", "proxy-authenticate",
                   "proxy-authorization", "te", "trailers", "transfer-encoding",
-                  "upgrade", "host"}
+                  "upgrade", "host", "content-encoding", "content-length"}
     headers = {k: v for k, v in request.headers.items() if k.lower() not in hop_by_hop}
 
     body = await request.body()
