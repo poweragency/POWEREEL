@@ -185,6 +185,20 @@ _WIZARD_CSS = """
     pointer-events: none;
 }
 
+/* Wide variant — for video-frame previews (subtitle styles, HeyGen built-in) */
+.pwr-card-img.wide {
+    aspect-ratio: 16 / 9;
+    background: #000;  /* match the dark video frame edge */
+}
+.pwr-card-img.wide img {
+    object-fit: contain;       /* preserve full preview, don't crop subtitles */
+    object-position: center;
+}
+.pwr-card-img.wide::after {
+    display: none;             /* no bottom-fade overlay on previews */
+}
+.pwr-card:hover .pwr-card-img.wide img { transform: none; }  /* no zoom on previews */
+
 /* "Active" pill in top-right of image */
 .pwr-active-pill {
     position: absolute;
@@ -213,11 +227,17 @@ _WIZARD_CSS = """
     line-height: 1.3;
 }
 .pwr-card-meta {
-    padding: 0 8px 4px;
+    padding: 0 8px 12px;
     font-size: .78rem;
     color: #71717a;
     text-align: center;
     letter-spacing: .03em;
+    line-height: 1.45;
+    min-height: 2.6em;       /* keep ~2 lines worth of vertical space so cards align */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;   /* max 3 lines, ellipsis after */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 /* Streamlit button polish */
@@ -1602,15 +1622,34 @@ elif st.session_state.step == 4:
 # ── STEP 5: Stile Sottotitoli ────────────────────────────────────────────────
 
 elif st.session_state.step == 5:
-    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[5]}</h1>', unsafe_allow_html=True)
-    st.caption("Scegli un preset o personalizza completamente lo stile dei sottotitoli")
+    import base64
+
+    st.markdown(
+        f'<h1 class="pwr-h1" translate="no" lang="it">{STEP_TITLES[5]}</h1>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="pwr-caption">Scegli lo stile dei sottotitoli karaoke. Ogni preset mostra come apparirà davvero nel tuo reel.</div>',
+        unsafe_allow_html=True,
+    )
 
     from src.subtitle_presets import PRESETS
 
     current_preset = settings["editor"]["subtitle"].get("preset", "classic")
+    using_heygen = settings["heygen"].get("subtitle_source") == "heygen"
+
+    def _img_data_url(path):
+        """Inline a local PNG as base64 data URL (so it renders inside the card markdown)."""
+        try:
+            return f"data:image/png;base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+        except Exception:
+            return ""
 
     # ── PRESET CARDS ──
-    st.subheader("📦 Preset disponibili")
+    st.markdown(
+        '<div class="pwr-section-label">🎬 Step 5 · Stile sottotitoli</div>',
+        unsafe_allow_html=True,
+    )
 
     preset_ids = list(PRESETS.keys())
     cols = st.columns(len(preset_ids))
@@ -1618,37 +1657,39 @@ elif st.session_state.step == 5:
     for i, pid in enumerate(preset_ids):
         preset = PRESETS[pid]
         with cols[i]:
-            is_selected = pid == current_preset
-            border = "3px solid #E8163C" if is_selected else "1px solid #444"
-            badge = "✅ ATTIVO" if is_selected else ""
-
+            is_selected = (pid == current_preset) and not using_heygen
+            klass = "pwr-card" + (" selected" if is_selected else "")
+            active_pill = (
+                '<div class="pwr-active-pill">✓ ATTIVO</div>'
+                if is_selected else ""
+            )
+            preview_path = PROJECT_ROOT / "assets" / "templates" / f"preset_{pid}.png"
+            data_url = _img_data_url(preview_path) if preview_path.exists() else ""
+            preview_html = (
+                f'<img src="{data_url}" alt="{preset["name"]}">'
+                if data_url
+                else '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#52525b;">📝 Preview non disponibile</div>'
+            )
             st.markdown(
-                f'<div style="border:{border}; border-radius:12px; padding:8px; text-align:center; background:#1a1a2e;">'
-                f'<h4 style="margin:4px 0;">{preset["name"]}</h4>'
-                f'<p style="margin:0 0 6px; font-size:11px; color:#888;">{preset["description"]}</p>'
-                f'<p style="margin:0; color:#E8163C; font-size:11px;">{badge}</p>'
+                f'<div class="{klass}">'
+                f'  <div class="pwr-card-img wide">{active_pill}{preview_html}</div>'
+                f'  <div class="pwr-card-name">{preset["name"]}</div>'
+                f'  <div class="pwr-card-meta">{preset["description"]}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-
-            preview_path = PROJECT_ROOT / "assets" / "templates" / f"preset_{pid}.png"
-            if preview_path.exists():
-                st.image(str(preview_path), use_container_width=True)
-
             if st.button(
-                "✅ Attivo" if is_selected else "Usa",
+                "✓ Selezionato" if is_selected else "Seleziona stile",
                 key=f"preset_{pid}",
                 use_container_width=True,
                 disabled=is_selected,
+                type="primary" if is_selected else "secondary",
             ):
-                # Apply preset settings
                 new_settings = dict(preset["settings"])
                 new_settings["preset"] = pid
-                # Keep position from existing
                 new_settings["position"] = settings["editor"]["subtitle"].get("position", "center")
                 new_settings["max_chars_per_line"] = settings["editor"]["subtitle"].get("max_chars_per_line", 25)
                 settings["editor"]["subtitle"] = new_settings
-                # Caption mode (HeyGen built-in) is OFF when using custom presets
                 settings["heygen"]["subtitle_source"] = "custom"
                 settings["heygen"]["caption"] = False
                 save_settings(settings)
@@ -1656,29 +1697,39 @@ elif st.session_state.step == 5:
 
     st.divider()
 
-    # ── ALTERNATIVE: HeyGen built-in ──
-    with st.expander("⚙️ Oppure usa i sottotitoli integrati di HeyGen"):
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            hp = PROJECT_ROOT / "assets" / "templates" / "heygen_caption_preview.png"
-            if hp.exists():
-                st.image(str(hp), width=240)
-            st.caption("Sottotitoli generati direttamente da HeyGen, stile classico bianco in basso")
-        with col2:
-            using_heygen = settings["heygen"].get("subtitle_source") == "heygen"
-            if using_heygen:
-                st.success("✅ HeyGen attivo")
-                if st.button("Torna ai preset Custom", use_container_width=True):
-                    settings["heygen"]["subtitle_source"] = "custom"
-                    settings["heygen"]["caption"] = False
-                    save_settings(settings)
-                    st.rerun()
-            else:
-                if st.button("Usa HeyGen", use_container_width=True):
-                    settings["heygen"]["subtitle_source"] = "heygen"
-                    settings["heygen"]["caption"] = True
-                    save_settings(settings)
-                    st.rerun()
+    # ── ALTERNATIVE: HeyGen built-in (same card style, single column) ──
+    st.markdown(
+        '<div class="pwr-section-label">⚙️ Alternativa · Sottotitoli HeyGen</div>',
+        unsafe_allow_html=True,
+    )
+    hg_col, _spacer1, _spacer2, _spacer3 = st.columns(4)
+    with hg_col:
+        klass = "pwr-card" + (" selected" if using_heygen else "")
+        active_pill = '<div class="pwr-active-pill">✓ ATTIVO</div>' if using_heygen else ""
+        hp = PROJECT_ROOT / "assets" / "templates" / "heygen_caption_preview.png"
+        hg_data_url = _img_data_url(hp) if hp.exists() else ""
+        preview_html = (
+            f'<img src="{hg_data_url}" alt="HeyGen">'
+            if hg_data_url
+            else '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#52525b;">⚙️</div>'
+        )
+        st.markdown(
+            f'<div class="{klass}">'
+            f'  <div class="pwr-card-img wide">{active_pill}{preview_html}</div>'
+            f'  <div class="pwr-card-name">HeyGen Built-in</div>'
+            f'  <div class="pwr-card-meta">Sottotitoli classici bianchi generati da HeyGen, no karaoke</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        if using_heygen:
+            if st.button("✓ Selezionato", key="hg_active", use_container_width=True, disabled=True, type="primary"):
+                pass
+        else:
+            if st.button("Seleziona stile", key="hg_use", use_container_width=True):
+                settings["heygen"]["subtitle_source"] = "heygen"
+                settings["heygen"]["caption"] = True
+                save_settings(settings)
+                st.rerun()
 
     st.divider()
 
