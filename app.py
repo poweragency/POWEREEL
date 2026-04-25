@@ -93,6 +93,218 @@ document.body.setAttribute('translate', 'no');
 
 st.markdown(_MOBILE_CSS, unsafe_allow_html=True)
 
+
+# ── Premium wizard CSS ───────────────────────────────────────────────────────
+_WIZARD_CSS = """
+<style>
+/* Page typography accent */
+.pwr-h1 {
+    font-size: 2.2rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -.025em !important;
+    background: linear-gradient(135deg, #fafafa 0%, #ff667f 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 0 0 6px !important;
+    line-height: 1.1 !important;
+}
+.pwr-caption {
+    color: #a1a1aa;
+    font-size: .98rem;
+    margin-bottom: 28px;
+}
+
+/* Section labels (PASSO, AVATAR, LOOK, etc.) */
+.pwr-section-label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #ff667f;
+    background: rgba(255, 35, 87, .10);
+    border: 1px solid rgba(255, 35, 87, .25);
+    padding: 5px 11px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+}
+
+/* Avatar / Look card (used for both group preview and per-look) */
+.pwr-card {
+    position: relative;
+    background: linear-gradient(180deg, #1a1a2e 0%, #141422 100%);
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 16px;
+    padding: 8px 8px 0;
+    transition: transform .28s cubic-bezier(.2,.7,.3,1),
+                border-color .25s ease,
+                box-shadow .28s ease;
+    overflow: hidden;
+    cursor: pointer;
+}
+.pwr-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255, 35, 87, .35);
+    box-shadow: 0 18px 40px -14px rgba(255, 35, 87, .35);
+}
+.pwr-card.selected {
+    border: 2px solid #ff2357;
+    box-shadow:
+        0 0 0 3px rgba(255, 35, 87, .12),
+        0 18px 50px -12px rgba(255, 35, 87, .55);
+    background: linear-gradient(180deg, rgba(255,35,87,.07) 0%, #141422 65%);
+}
+
+/* Image wrapper — 4/5 aspect, faces at upper-third */
+.pwr-card-img {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    border-radius: 11px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #0f0f1e, #1a1a2e);
+}
+.pwr-card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 18%;  /* keeps faces visible, no chin chop */
+    display: block;
+    transition: transform .5s ease;
+}
+.pwr-card:hover .pwr-card-img img { transform: scale(1.05); }
+
+/* Gradient overlay at bottom of image, for premium feel */
+.pwr-card-img::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 35%;
+    background: linear-gradient(0deg, rgba(10,10,18,.85) 0%, transparent 100%);
+    pointer-events: none;
+}
+
+/* "Active" pill in top-right of image */
+.pwr-active-pill {
+    position: absolute;
+    top: 12px; right: 12px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
+    color: white;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    box-shadow: 0 4px 14px rgba(34,197,94,.45);
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Card name */
+.pwr-card-name {
+    padding: 12px 8px 4px;
+    font-size: .92rem;
+    font-weight: 600;
+    text-align: center;
+    color: #e4e4e7;
+    line-height: 1.3;
+}
+.pwr-card-meta {
+    padding: 0 8px 4px;
+    font-size: .78rem;
+    color: #71717a;
+    text-align: center;
+    letter-spacing: .03em;
+}
+
+/* Streamlit button polish */
+.stButton > button {
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    transition: transform .15s ease, box-shadow .25s ease, background .2s ease, opacity .2s ease !important;
+    border: 1px solid rgba(255,255,255,.12) !important;
+    background: rgba(255,255,255,.04) !important;
+}
+.stButton > button:hover:not(:disabled) {
+    transform: translateY(-1px) !important;
+    background: rgba(255,255,255,.08) !important;
+    border-color: rgba(255,255,255,.22) !important;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #ff2357 0%, #e40014 100%) !important;
+    border: 0 !important;
+    color: white !important;
+    box-shadow: 0 8px 22px -8px rgba(255, 35, 87, .55) !important;
+}
+.stButton > button[kind="primary"]:hover:not(:disabled) {
+    box-shadow: 0 14px 32px -8px rgba(255, 35, 87, .7) !important;
+}
+.stButton > button:disabled {
+    opacity: .55 !important;
+    cursor: not-allowed !important;
+}
+
+/* Premium "Selected" button look (the green Attivo state below cards) */
+.stButton > button[disabled]:has-text("Attivo"),
+button[data-testid][kind="secondary"][disabled] {
+    background: rgba(34,197,94,.12) !important;
+    border-color: rgba(34,197,94,.4) !important;
+    color: #4ade80 !important;
+    opacity: 1 !important;
+}
+
+/* Tighten radio (avatar group) styling — though we now use cards */
+[data-testid="stRadio"] > div {
+    gap: 8px !important;
+}
+[data-testid="stRadio"] label {
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+    padding: 8px 14px !important;
+    border-radius: 999px !important;
+    transition: all .2s ease;
+    cursor: pointer;
+}
+[data-testid="stRadio"] label:has(input:checked) {
+    background: linear-gradient(135deg, rgba(255,35,87,.18), rgba(228,0,20,.10));
+    border-color: rgba(255,35,87,.5);
+    color: white;
+    box-shadow: 0 4px 14px -4px rgba(255,35,87,.4);
+}
+
+/* Soft divider */
+hr, [data-testid="stDivider"] {
+    border: 0 !important;
+    border-top: 1px solid rgba(255,255,255,.08) !important;
+    margin: 28px 0 !important;
+}
+
+/* Subheader polish */
+h2, h3, .stSubheader {
+    font-weight: 700 !important;
+    letter-spacing: -.015em !important;
+}
+
+/* Sidebar refinements */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0f0f1e 0%, #08090f 100%) !important;
+}
+
+/* Metric cards (credits) */
+[data-testid="stMetric"] {
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.06);
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+</style>
+"""
+st.markdown(_WIZARD_CSS, unsafe_allow_html=True)
+
+
 PROJECT_ROOT = Path(__file__).parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 ENV_PATH = PROJECT_ROOT / "config" / ".env"
@@ -1144,8 +1356,14 @@ if st.session_state.view == "costs":
 # ── STEP 1: Avatar & Look ────────────────────────────────────────────────────
 
 if st.session_state.step == 1:
-    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[1]}</h1>', unsafe_allow_html=True)
-    st.caption("Scegli quale dei tuoi avatar usare e quale look (outfit/scenario)")
+    st.markdown(
+        f'<h1 class="pwr-h1" translate="no" lang="it">{STEP_TITLES[1]}</h1>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="pwr-caption">Scegli il tuo avatar AI e il look perfetto per il tuo reel.</div>',
+        unsafe_allow_html=True,
+    )
 
     groups = data["groups"]
     all_looks = data["looks"]
@@ -1155,44 +1373,107 @@ if st.session_state.step == 1:
         st.error("Nessun avatar trovato. Verifica HEYGEN_API_KEY in config/.env")
         st.stop()
 
-    # Sub-step A: choose avatar
+    # Determine which group contains the currently-active look
     avatar_names = [g["name"] for g in groups]
-    current_group = avatar_names[0]
+    active_group = avatar_names[0]
     for gname, looks in all_looks.items():
         for look in looks:
             if look["look_id"] == current_avatar:
-                current_group = gname
+                active_group = gname
                 break
 
-    selected_group = st.radio(
-        "Avatar",
-        avatar_names,
-        index=avatar_names.index(current_group) if current_group in avatar_names else 0,
-        horizontal=True,
+    # Persist the user's "browsing" group across reruns (separate from the
+    # active/saved one — user might explore another avatar's looks before
+    # actually selecting a new look).
+    if "wizard_browsing_group" not in st.session_state:
+        st.session_state.wizard_browsing_group = active_group
+    elif st.session_state.wizard_browsing_group not in avatar_names:
+        st.session_state.wizard_browsing_group = active_group
+
+    selected_group = st.session_state.wizard_browsing_group
+
+    # ── Sub-step A: avatar group cards ──
+    st.markdown(
+        '<div class="pwr-section-label">⚡ Step 1.A · Avatar</div>',
+        unsafe_allow_html=True,
     )
 
-    st.divider()
-    st.subheader(f"Look disponibili per {selected_group}")
+    group_cols = st.columns(min(len(groups), 4))
+    for idx, g in enumerate(groups):
+        gname = g["name"]
+        gl = all_looks.get(gname, [])
+        preview_img = gl[0]["image_url"] if gl else ""
+        is_browsing = gname == selected_group
+        is_active = gname == active_group
 
+        with group_cols[idx % 4]:
+            klass = "pwr-card" + (" selected" if is_browsing else "")
+            active_pill = (
+                '<div class="pwr-active-pill">● ATTIVO</div>'
+                if is_active else ""
+            )
+            looks_count = len(gl)
+            preview_html = (
+                f'<img src="{preview_img}" alt="{gname}">'
+                if preview_img
+                else '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#52525b;">🎭</div>'
+            )
+            st.markdown(
+                f'<div class="{klass}">'
+                f'  <div class="pwr-card-img">{active_pill}{preview_html}</div>'
+                f'  <div class="pwr-card-name">{gname}</div>'
+                f'  <div class="pwr-card-meta">{looks_count} look disponibil{"i" if looks_count != 1 else "e"}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+            btn_label = "✓ In esplorazione" if is_browsing else "Esplora look →"
+            if st.button(
+                btn_label,
+                key=f"grp_{gname}_{idx}",
+                use_container_width=True,
+                disabled=is_browsing,
+                type="primary" if is_browsing else "secondary",
+            ):
+                st.session_state.wizard_browsing_group = gname
+                st.rerun()
+
+    st.divider()
+
+    # ── Sub-step B: look cards for the currently browsing group ──
     looks = all_looks.get(selected_group, [])
+    st.markdown(
+        '<div class="pwr-section-label">🎬 Step 1.B · Look</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<h3 style="margin:0 0 18px;">Scegli un look per <span style="color:#ff667f;">{selected_group}</span> '
+        f'<span style="color:#71717a;font-weight:500;font-size:.9rem;">({len(looks)} disponibil{"i" if len(looks) != 1 else "e"})</span></h3>',
+        unsafe_allow_html=True,
+    )
+
     if looks:
         cols = st.columns(min(len(looks), 4))
         for i, look in enumerate(looks):
             with cols[i % 4]:
                 is_selected = look["look_id"] == current_avatar
-                border = "3px solid #E8163C" if is_selected else "1px solid #444"
+                klass = "pwr-card" + (" selected" if is_selected else "")
+                active_pill = (
+                    '<div class="pwr-active-pill">✓ ATTIVO</div>'
+                    if is_selected else ""
+                )
                 st.markdown(
-                    f'<div style="border:{border}; border-radius:10px; padding:6px; text-align:center;">'
-                    f'<img src="{look["image_url"]}" style="width:100%; border-radius:8px; max-height:180px; object-fit:cover;">'
-                    f'<p style="margin:4px 0; font-size:12px;">{look["name"]}</p>'
+                    f'<div class="{klass}">'
+                    f'  <div class="pwr-card-img">{active_pill}<img src="{look["image_url"]}" alt="{look["name"]}"></div>'
+                    f'  <div class="pwr-card-name">{look["name"]}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
                 if st.button(
-                    "✅ Attivo" if is_selected else "Usa",
+                    "✓ Selezionato" if is_selected else "Seleziona look",
                     key=f"look_{look['look_id']}",
                     use_container_width=True,
                     disabled=is_selected,
+                    type="primary" if is_selected else "secondary",
                 ):
                     settings["heygen"]["avatar_id"] = look["look_id"]
                     save_settings(settings)
