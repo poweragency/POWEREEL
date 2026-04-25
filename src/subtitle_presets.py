@@ -64,7 +64,7 @@ def find_emoji(text: str) -> str:
 
 PRESETS = {
     "classic": {
-        "name": "Classic (nicktrading_)",
+        "name": "Classic",
         "description": "Box rosso sulla parola chiave, font Bebas Neue grande",
         "settings": {
             "font_path": "./assets/fonts/BebasNeue-Regular.ttf",
