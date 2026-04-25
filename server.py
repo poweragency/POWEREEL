@@ -322,14 +322,24 @@ async def proxy_to_streamlit(path: str, request: Request):
 @app.websocket("/{path:path}")
 async def proxy_websocket(websocket: WebSocket, path: str):
     """Proxy WebSocket connections to Streamlit (for live updates)."""
-    await websocket.accept()
     target_url = f"ws://{STREAMLIT_HOST}:{STREAMLIT_PORT}/{path}"
     qs = websocket.url.query
     if qs:
         target_url += "?" + qs
 
+    # Forward subprotocols to upstream so Streamlit can negotiate.
+    # Without this, the browser sends Sec-WebSocket-Protocol but our accept()
+    # echoes nothing back → browser drops the connection immediately.
+    requested_subprotocols = websocket.scope.get("subprotocols") or []
+
     try:
-        async with websockets.connect(target_url) as upstream:
+        async with websockets.connect(
+            target_url,
+            subprotocols=requested_subprotocols or None,
+        ) as upstream:
+            # Echo the upstream-selected subprotocol back to the client.
+            await websocket.accept(subprotocol=upstream.subprotocol)
+
             async def client_to_upstream():
                 try:
                     while True:
