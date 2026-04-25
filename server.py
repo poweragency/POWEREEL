@@ -126,6 +126,23 @@ async def healthz():
     return {"ok": True, "streamlit_running": _streamlit_proc is not None and _streamlit_proc.poll() is None}
 
 
+# ── Static landing preview ───────────────────────────────────────────────────
+# Served directly by FastAPI (bypasses Streamlit) to test the new landing
+# without disrupting the existing flow. Promote to "/" once approved.
+
+_LANDING_PATH = PROJECT_ROOT / "static" / "landing.html"
+
+
+@app.get("/landing")
+async def landing_preview():
+    if not _LANDING_PATH.exists():
+        return JSONResponse({"error": "landing.html not found"}, status_code=404)
+    return Response(
+        content=_LANDING_PATH.read_text(encoding="utf-8"),
+        media_type="text/html; charset=utf-8",
+    )
+
+
 # ── OAuth: Facebook ───────────────────────────────────────────────────────────
 
 @app.get("/oauth/facebook/start")
