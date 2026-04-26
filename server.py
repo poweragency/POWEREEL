@@ -143,6 +143,32 @@ async def landing_preview():
     )
 
 
+# ── Public video serve (for IG Reels video_url upload method) ────────────────
+# Meta's resumable upload endpoint (rupload.facebook.com) returns
+# ProcessingFailedError 500 for some account/payload combos, even when the
+# video is spec-compliant. The reliable fallback is the `video_url` method:
+# we expose the file at a public URL and Meta's servers fetch it themselves.
+
+import re as _re_video
+
+@app.get("/_video/{key}/{filename}")
+async def serve_temp_video(key: str, filename: str):
+    """Serve an output video file so Meta's CDN can fetch it for Reels publish.
+
+    `key` is a date subfolder (e.g. '2026-04-26') OR an arbitrary opaque
+    key that matches an output dir. `filename` is the mp4 in that dir.
+    """
+    if not _re_video.match(r'^[\w\-:.]+$', key):
+        return JSONResponse({"error": "invalid key"}, status_code=400)
+    if not _re_video.match(r'^[\w\-.]+\.(mp4|mov)$', filename):
+        return JSONResponse({"error": "invalid filename"}, status_code=400)
+    path = PROJECT_ROOT / "output" / key / filename
+    if not path.exists() or not path.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    from fastapi.responses import FileResponse
+    return FileResponse(path, media_type="video/mp4")
+
+
 # ── OAuth: Facebook ───────────────────────────────────────────────────────────
 
 @app.get("/oauth/facebook/start")

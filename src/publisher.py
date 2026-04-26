@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -17,6 +18,7 @@ from .scraper import Article
 logger = logging.getLogger(__name__)
 
 GRAPH_API = "https://graph.facebook.com/v21.0"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _probe_video(video_path: Path) -> str:
@@ -119,6 +121,27 @@ def _build_caption(
     return caption.strip()
 
 
+def _build_public_video_url(video_path: Path) -> str | None:
+    """Build a public URL where Meta's servers can fetch the video from.
+
+    Requires PUBLIC_BASE_URL env (Railway public domain) and the file to live
+    under PROJECT_ROOT/output/. Returns None if either condition fails — caller
+    will fall back to resumable upload.
+    """
+    public_base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    if not public_base:
+        return None
+    try:
+        rel = video_path.resolve().relative_to((PROJECT_ROOT / "output").resolve())
+    except ValueError:
+        return None
+    parts = rel.parts
+    if len(parts) < 2:
+        return None
+    # Server route: /_video/{key}/{filename}  (see server.py)
+    return f"{public_base}/_video/{parts[0]}/{parts[-1]}"
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=2, min=5, max=60),
@@ -130,10 +153,50 @@ def _upload_video(
     access_token: str,
     caption: str,
 ) -> str:
-    """Upload video and create media container. Returns container ID."""
-    file_size = video_path.stat().st_size
+    """Create a Reel media container, preferring video_url over resumable.
 
-    # Step 1: Initialize resumable upload
+    Two strategies:
+      1. PUBLIC_BASE_URL set + file under output/ → use `video_url` so Meta
+         fetches our public route. Bypasses rupload.facebook.com which often
+         returns ProcessingFailedError 500 even for spec-compliant videos.
+      2. No public URL available → resumable upload (legacy path).
+
+    Returns the container ID. Caller polls status then publishes.
+    """
+    file_size = video_path.stat().st_size
+    public_url = _build_public_video_url(video_path)
+
+    if public_url:
+        logger.info(
+            "Uploading reel via video_url: %s (%.2f MB, ig=%s)",
+            public_url, file_size / 1_048_576, ig_account_id,
+        )
+        init_resp = httpx.post(
+            f"{GRAPH_API}/{ig_account_id}/media",
+            params={
+                "media_type": "REELS",
+                "video_url": public_url,
+                "caption": caption,
+                "access_token": access_token,
+            },
+            timeout=60,
+        )
+        if init_resp.status_code >= 400:
+            body = init_resp.text[:600] if init_resp.text else "<empty>"
+            logger.error(
+                "IG /media (video_url) failed: HTTP %s — body: %s",
+                init_resp.status_code, body,
+            )
+        init_resp.raise_for_status()
+        container_id = init_resp.json()["id"]
+        logger.info("Container creato (video_url): %s", container_id)
+        return container_id
+
+    # ── Fallback: resumable upload (only used if no PUBLIC_BASE_URL) ──
+    logger.warning(
+        "PUBLIC_BASE_URL not set or path not under output/ — falling back to resumable upload"
+    )
+
     init_resp = httpx.post(
         f"{GRAPH_API}/{ig_account_id}/media",
         params={
@@ -149,10 +212,9 @@ def _upload_video(
     container_id = init_data["id"]
     upload_url = init_data.get("uri")
 
-    logger.info("Container creato: %s", container_id)
+    logger.info("Container creato (resumable): %s", container_id)
 
     if upload_url:
-        # Step 2: Upload video binary via resumable upload
         with open(video_path, "rb") as f:
             video_data = f.read()
 
@@ -168,14 +230,11 @@ def _upload_video(
                 "Authorization": f"OAuth {access_token}",
                 "offset": "0",
                 "file_size": str(file_size),
-                # Meta's upload endpoint returns 500 in some accounts when
-                # Content-Type is omitted or set to multipart/form-data
                 "Content-Type": "application/octet-stream",
             },
-            timeout=300,  # Large file upload can take a while
+            timeout=300,
         )
         if upload_resp.status_code >= 400:
-            # Meta returns useful error context in the body — surface it.
             body_preview = upload_resp.text[:800] if upload_resp.text else "<empty>"
             logger.error(
                 "IG resumable upload failed: HTTP %s\n  URL: %s\n  Body: %s",
@@ -183,10 +242,6 @@ def _upload_video(
             )
         upload_resp.raise_for_status()
         logger.info("Video uploadato via resumable upload")
-    else:
-        # Fallback: container was created without resumable upload
-        # This happens if the API version doesn't support it
-        logger.info("Container creato senza resumable upload (video_url richiesto)")
 
     return container_id
 
