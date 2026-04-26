@@ -73,6 +73,11 @@ def _upload_video(
         with open(video_path, "rb") as f:
             video_data = f.read()
 
+        logger.info(
+            "Uploading reel: %s (%.2f MB, ig=%s)",
+            video_path.name, file_size / 1_048_576, ig_account_id,
+        )
+
         upload_resp = httpx.post(
             upload_url,
             content=video_data,
@@ -80,9 +85,19 @@ def _upload_video(
                 "Authorization": f"OAuth {access_token}",
                 "offset": "0",
                 "file_size": str(file_size),
+                # Meta's upload endpoint returns 500 in some accounts when
+                # Content-Type is omitted or set to multipart/form-data
+                "Content-Type": "application/octet-stream",
             },
             timeout=300,  # Large file upload can take a while
         )
+        if upload_resp.status_code >= 400:
+            # Meta returns useful error context in the body — surface it.
+            body_preview = upload_resp.text[:800] if upload_resp.text else "<empty>"
+            logger.error(
+                "IG resumable upload failed: HTTP %s\n  URL: %s\n  Body: %s",
+                upload_resp.status_code, upload_url, body_preview,
+            )
         upload_resp.raise_for_status()
         logger.info("Video uploadato via resumable upload")
     else:
