@@ -78,7 +78,12 @@ def _ensure_reels_compat(video_path: Path) -> Path:
         "-level:v", "4.1",
         "-pix_fmt", "yuv420p",
         "-preset", "fast",
-        "-crf", "23",
+        # Target ~5 Mbps for 1080p Reels (Meta recommends 1-25 Mbps; CRF
+        # alone produced ~970kbps which triggered error 2207076 even though
+        # the video was technically spec-compliant).
+        "-b:v", "5M",
+        "-maxrate", "7M",
+        "-bufsize", "10M",
         "-r", "30",                                # constant 30 fps
         "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",  # ensure even dims
         "-c:a", "aac",
@@ -257,7 +262,9 @@ def _poll_container_status(
         resp = httpx.get(
             f"{GRAPH_API}/{container_id}",
             params={
-                "fields": "status_code,status",
+                # Pull every diagnostic field Meta exposes so we can surface
+                # the real cause when status_code=ERROR.
+                "fields": "status_code,status,error",
                 "access_token": access_token,
             },
             timeout=15,
@@ -274,8 +281,22 @@ def _poll_container_status(
             return
 
         if status == "ERROR":
-            error_msg = data.get("status", "Errore sconosciuto")
-            raise RuntimeError(f"Instagram container error: {error_msg}")
+            err_obj = data.get("error") or {}
+            err_status = data.get("status", "")
+            err_msg = (
+                err_obj.get("message")
+                or err_obj.get("error_user_msg")
+                or err_status
+                or "Errore sconosciuto"
+            )
+            err_code = err_obj.get("code") or err_obj.get("error_subcode")
+            logger.error(
+                "Container ERROR — code=%s status=%s error=%s",
+                err_code, err_status, err_obj,
+            )
+            raise RuntimeError(
+                f"Instagram container error (code={err_code}): {err_msg}"
+            )
 
         time.sleep(interval)
 
