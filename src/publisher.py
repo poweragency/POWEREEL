@@ -19,6 +19,35 @@ logger = logging.getLogger(__name__)
 GRAPH_API = "https://graph.facebook.com/v21.0"
 
 
+def _probe_video(video_path: Path) -> str:
+    """Run ffprobe and return a one-line summary of video/audio specs.
+
+    Used for debugging Meta's ProcessingFailedError — when an upload fails
+    we have an exact record of what we sent.
+    """
+    if not shutil.which("ffprobe"):
+        return "ffprobe-not-available"
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries",
+                "stream=codec_name,codec_type,width,height,r_frame_rate,sample_rate,channels,pix_fmt,profile:format=duration,bit_rate,format_name",
+                "-of", "default=noprint_wrappers=1",
+                str(video_path),
+            ],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return f"ffprobe-error: {result.stderr[:200]}"
+        # Compress newlines into a single readable line
+        return " | ".join(
+            line.strip() for line in result.stdout.splitlines() if line.strip()
+        )[:600]
+    except Exception as e:
+        return f"ffprobe-exception: {e}"
+
+
 def _ensure_reels_compat(video_path: Path) -> Path:
     """Re-encode the video to a known-good Instagram Reels spec.
 
@@ -56,6 +85,7 @@ def _ensure_reels_compat(video_path: Path) -> Path:
         "-movflags", "+faststart",                 # moov atom at start
         str(out_path),
     ]
+    logger.info("Source video specs: %s", _probe_video(video_path))
     logger.info("Re-encoding to Reels spec: %s → %s", video_path.name, out_path.name)
     t0 = time.time()
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -66,6 +96,7 @@ def _ensure_reels_compat(video_path: Path) -> Path:
         "Re-encode done in %.1fs (out=%.2f MB)",
         time.time() - t0, out_path.stat().st_size / 1_048_576,
     )
+    logger.info("Re-encoded video specs: %s", _probe_video(out_path))
     return out_path
 
 

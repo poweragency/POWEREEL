@@ -176,13 +176,16 @@ def run_pipeline(
                         ig_acct = tgt.get("instagram_business_account_id", "")
                         ig_user = tgt.get("instagram_username", "")
 
-                        # Instagram (only if account has IG linked)
+                        # Instagram (only if account has IG linked).
+                        # Use the PAGE access token (not the user token) — Meta's
+                        # Reels processor returns ProcessingFailedError for video
+                        # uploads authenticated with a user token in some accounts.
                         if ig_acct:
                             try:
                                 from .publishers.instagram import publish_to_instagram
                                 media_id = publish_to_instagram(
                                     final_path, articles, config.publisher,
-                                    ig_acct, token,
+                                    ig_acct, page_token,
                                 )
                                 publish_results[f"ig:@{ig_user or ig_acct}"] = media_id
                                 if not publish_id:
@@ -217,9 +220,14 @@ def run_pipeline(
                     if "instagram" in platforms:
                         try:
                             from .publishers.instagram import publish_to_instagram
+                            # Prefer page token over user token for Reels publishing
+                            ig_token = (
+                                getattr(config, "facebook_page_access_token", "")
+                                or token
+                            )
                             ig_id = publish_to_instagram(
                                 final_path, articles, config.publisher,
-                                config.instagram_business_account_id, token,
+                                config.instagram_business_account_id, ig_token,
                             )
                             publish_results["instagram"] = ig_id
                             publish_id = ig_id
