@@ -23,14 +23,18 @@ GRAPH_API = "https://graph.facebook.com/v21.0"
 META_LOGIN_DIALOG = "https://www.facebook.com/v21.0/dialog/oauth"
 
 # Permissions requested from the customer's Facebook account.
-# These cover Instagram Reels publishing AND Facebook Page Reels publishing.
+# Only scopes already approved for this Meta App in App Review are listed.
+# Instagram publishing works with instagram_basic + instagram_content_publish
+# (the FB Page is just used to discover the linked IG Business account).
+#
+# To enable native Facebook Page Reel publishing, submit App Review for
+# `pages_manage_posts` and re-add it here. `publish_video` was deprecated
+# by Meta — Reels now go through `pages_manage_posts`.
 FACEBOOK_SCOPES = [
     "instagram_basic",
     "instagram_content_publish",
     "pages_show_list",
     "pages_read_engagement",
-    "pages_manage_posts",
-    "publish_video",
     "business_management",
 ]
 
