@@ -262,9 +262,10 @@ def _poll_container_status(
         resp = httpx.get(
             f"{GRAPH_API}/{container_id}",
             params={
-                # Pull every diagnostic field Meta exposes so we can surface
-                # the real cause when status_code=ERROR.
-                "fields": "status_code,status,error",
+                # Only fields Meta documents on the container endpoint.
+                # The `status` string contains the human-readable error
+                # reason when status_code=ERROR (e.g. "Error: Video duration ...").
+                "fields": "status_code,status",
                 "access_token": access_token,
             },
             timeout=15,
@@ -274,29 +275,17 @@ def _poll_container_status(
         status = data.get("status_code", "UNKNOWN")
 
         logger.info(
-            "Container poll %d/%d: status=%s", attempt, max_attempts, status
+            "Container poll %d/%d: status_code=%s status=%r",
+            attempt, max_attempts, status, data.get("status", ""),
         )
 
         if status == "FINISHED":
             return
 
         if status == "ERROR":
-            err_obj = data.get("error") or {}
-            err_status = data.get("status", "")
-            err_msg = (
-                err_obj.get("message")
-                or err_obj.get("error_user_msg")
-                or err_status
-                or "Errore sconosciuto"
-            )
-            err_code = err_obj.get("code") or err_obj.get("error_subcode")
-            logger.error(
-                "Container ERROR — code=%s status=%s error=%s",
-                err_code, err_status, err_obj,
-            )
-            raise RuntimeError(
-                f"Instagram container error (code={err_code}): {err_msg}"
-            )
+            err_status = data.get("status", "Errore sconosciuto")
+            logger.error("Container ERROR — full status string: %s", err_status)
+            raise RuntimeError(f"Instagram container error: {err_status}")
 
         time.sleep(interval)
 
