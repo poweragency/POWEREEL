@@ -74,22 +74,28 @@ def _ensure_reels_compat(video_path: Path) -> Path:
         "ffmpeg", "-y", "-loglevel", "error",
         "-i", str(video_path),
         "-c:v", "libx264",
-        "-profile:v", "high",
-        "-level:v", "4.1",
+        # Baseline profile: no B-frames, widest compatibility. Meta's Reels
+        # processor rejected High-profile output with error 2207076 even with
+        # spec-compliant bitrate. Baseline also matches what the source video
+        # uses (HeyGen/moviepy → Constrained Baseline).
+        "-profile:v", "baseline",
+        "-level:v", "4.0",
+        "-bf", "0",                                # explicitly no B-frames
         "-pix_fmt", "yuv420p",
         "-preset", "fast",
-        # Target ~5 Mbps for 1080p Reels (Meta recommends 1-25 Mbps; CRF
-        # alone produced ~970kbps which triggered error 2207076 even though
-        # the video was technically spec-compliant).
+        # Target ~5 Mbps for 1080p Reels (Meta recommends 1-25 Mbps).
         "-b:v", "5M",
         "-maxrate", "7M",
         "-bufsize", "10M",
         "-r", "30",                                # constant 30 fps
+        "-g", "60",                                # GOP every 2s
         "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",  # ensure even dims
         "-c:a", "aac",
         "-b:a", "128k",
         "-ar", "48000",
+        "-ac", "2",                                # stereo
         "-movflags", "+faststart",                 # moov atom at start
+        "-brand", "mp42",                          # MP4 brand
         str(out_path),
     ]
     logger.info("Source video specs: %s", _probe_video(video_path))
@@ -182,6 +188,7 @@ def _upload_video(
                 "media_type": "REELS",
                 "video_url": public_url,
                 "caption": caption,
+                "share_to_feed": "true",  # publish in main feed too
                 "access_token": access_token,
             },
             timeout=60,
