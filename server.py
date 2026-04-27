@@ -152,18 +152,17 @@ async def landing_preview():
 import re as _re_video
 
 @app.api_route("/_video/{key}/{filename}", methods=["GET", "HEAD"])
-async def serve_temp_video(key: str, filename: str, request: Request):
+async def serve_temp_video(key: str, filename: str):
     """Serve an output video file so Meta's CDN can fetch it for Reels publish.
 
     `key` is a date subfolder (e.g. '2026-04-26') OR an arbitrary opaque
-    key that matches an output dir. `filename` is the mp4 in that dir.
+    key that matches an output dir, OR the literal "test" to serve a
+    bundled asset from static/test/. `filename` is the mp4 in that dir.
 
-    HEAD is handled explicitly with a manually-set Content-Length header.
-    Meta's media fetcher does HEAD first to learn the file size — without
-    Content-Length in the HEAD response it rejects the container with the
-    generic error 2207076. Starlette's FileResponse loses Content-Length
-    on HEAD somewhere in the Uvicorn/Railway-edge stack, so we bypass it
-    and send the headers manually.
+    HEAD is included in `methods` so Meta's media fetcher gets video/mp4
+    Content-Type + Content-Length + Last-Modified from FileResponse.
+    Without HEAD on this route, the catch-all proxy below answers from
+    Streamlit with text/html and Meta rejects with error 2207076.
     """
     if not _re_video.match(r'^[\w\-:.]+$', key):
         return JSONResponse({"error": "invalid key"}, status_code=400)
@@ -176,16 +175,6 @@ async def serve_temp_video(key: str, filename: str, request: Request):
     if not path.exists() or not path.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
 
-    file_size = path.stat().st_size
-    if request.method == "HEAD":
-        return Response(
-            status_code=200,
-            headers={
-                "Content-Type": "video/mp4",
-                "Content-Length": str(file_size),
-                "Accept-Ranges": "bytes",
-            },
-        )
     from fastapi.responses import FileResponse
     return FileResponse(path, media_type="video/mp4")
 
