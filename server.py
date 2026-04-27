@@ -169,7 +169,10 @@ async def serve_temp_video(key: str, filename: str, request: Request):
         return JSONResponse({"error": "invalid key"}, status_code=400)
     if not _re_video.match(r'^[\w\-.]+\.(mp4|mov)$', filename):
         return JSONResponse({"error": "invalid filename"}, status_code=400)
-    path = PROJECT_ROOT / "output" / key / filename
+    if key == "test":
+        path = PROJECT_ROOT / "static" / "test" / filename
+    else:
+        path = PROJECT_ROOT / "output" / key / filename
     if not path.exists() or not path.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
 
