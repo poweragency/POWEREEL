@@ -28,3 +28,4 @@ venv/
 Thumbs.db
 .DS_Store
 *.mp4
+!static/test/*.mp4
