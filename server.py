@@ -151,12 +151,17 @@ async def landing_preview():
 
 import re as _re_video
 
-@app.get("/_video/{key}/{filename}")
+@app.api_route("/_video/{key}/{filename}", methods=["GET", "HEAD"])
 async def serve_temp_video(key: str, filename: str):
     """Serve an output video file so Meta's CDN can fetch it for Reels publish.
 
     `key` is a date subfolder (e.g. '2026-04-26') OR an arbitrary opaque
     key that matches an output dir. `filename` is the mp4 in that dir.
+
+    Both GET and HEAD must be supported: Meta's media fetcher does a HEAD
+    first to validate the URL/Content-Type before issuing the GET. Without
+    HEAD on this route, the catch-all proxy below answers from Streamlit
+    with text/html and Meta rejects with error 2207076.
     """
     if not _re_video.match(r'^[\w\-:.]+$', key):
         return JSONResponse({"error": "invalid key"}, status_code=400)
