@@ -406,6 +406,148 @@ def _oauth_done_html(ok: bool, message: str, pages: list | None = None) -> Respo
     return Response(content=html, media_type="text/html")
 
 
+# ── Diagnostic publish endpoint ───────────────────────────────────────────────
+# Lets us POST to Meta /media bypassing the dashboard, so we can isolate
+# whether the recurring 2207076 is caused by re-encoding, the URL host, or
+# the App. Removed once we've root-caused.
+
+@app.get("/_diag/test_publish")
+async def diag_test_publish(
+    token: str = "",
+    reencode: int = 1,
+    poll_seconds: int = 90,
+):
+    """Pick the latest output/<date>/final*.mp4, optionally re-encode, upload
+    to R2, POST /media, poll status. Returns full diagnostic JSON.
+
+    Query params:
+      token         must equal env DIAG_TOKEN
+      reencode      1 = use _ensure_reels_compat output (default), 0 = source as-is
+      poll_seconds  upper bound for status polling (default 90)
+    """
+    expected = os.environ.get("DIAG_TOKEN", "")
+    if not expected or token != expected:
+        return JSONResponse({"error": "unauthorized"}, status_code=403)
+
+    # Find most-recent output/YYYY-MM-DD dir
+    output_root = PROJECT_ROOT / "output"
+    if not output_root.exists():
+        return JSONResponse({"error": "no output/ dir"}, status_code=404)
+    date_dirs = [d for d in output_root.iterdir()
+                 if d.is_dir() and d.name[:4].isdigit()]
+    if not date_dirs:
+        return JSONResponse({"error": "no date subdirs in output/"}, status_code=404)
+    latest_dir = max(date_dirs, key=lambda d: d.stat().st_mtime)
+
+    final_src = latest_dir / "final.mp4"
+    if not final_src.exists():
+        return JSONResponse(
+            {"error": f"no final.mp4 in {latest_dir.name}"},
+            status_code=404,
+        )
+
+    # Pick the file to publish
+    from src.publisher import _ensure_reels_compat, _probe_video
+    if reencode:
+        target = _ensure_reels_compat(final_src)
+    else:
+        target = final_src
+    specs = _probe_video(target)
+
+    # Upload to R2 under a diag/ prefix (won't collide with prod reels/)
+    from src import cdn
+    if not cdn.is_configured():
+        return JSONResponse({"error": "R2 not configured"}, status_code=500)
+
+    public_url = cdn.upload_and_get_url(target, key_prefix="diag")
+
+    # Independent CDN check from inside Railway
+    head_resp = httpx.head(public_url, timeout=30, follow_redirects=True)
+    head_info = {
+        "status": head_resp.status_code,
+        "content_length": head_resp.headers.get("content-length"),
+        "content_type": head_resp.headers.get("content-type"),
+        "accept_ranges": head_resp.headers.get("accept-ranges"),
+    }
+
+    # Get IG creds the same way the dashboard does
+    from src.config_loader import load_config
+    from src.auth import check_and_refresh_token
+    cfg = load_config(check_ffmpeg=False)
+    page_tok = cfg.facebook_page_access_token or check_and_refresh_token(
+        cfg.meta_access_token, cfg.meta_app_id, cfg.meta_app_secret,
+    )
+    ig_id = cfg.instagram_business_account_id
+
+    # POST /media — minimal params, no share_to_feed (eliminate that variable)
+    media_resp = httpx.post(
+        f"https://graph.facebook.com/v21.0/{ig_id}/media",
+        params={
+            "media_type": "REELS",
+            "video_url": public_url,
+            "caption": "DIAG test — please ignore",
+            "access_token": page_tok,
+        },
+        timeout=60,
+    )
+    media_body = media_resp.text[:1500] if media_resp.text else ""
+    if media_resp.status_code != 200:
+        return JSONResponse({
+            "step": "media_create_failed",
+            "media_status": media_resp.status_code,
+            "media_body": media_body,
+            "video_url": public_url,
+            "head": head_info,
+            "specs": specs,
+            "reencode": bool(reencode),
+            "file_size": target.stat().st_size,
+            "ig_account_id": ig_id,
+        })
+
+    container_id = media_resp.json().get("id")
+    if not container_id:
+        return JSONResponse({
+            "step": "no_container_id",
+            "media_body": media_body,
+        }, status_code=500)
+
+    # Poll
+    deadline = time.time() + poll_seconds
+    last_status: dict = {}
+    poll_count = 0
+    while time.time() < deadline:
+        poll_count += 1
+        poll_resp = httpx.get(
+            f"https://graph.facebook.com/v21.0/{container_id}",
+            params={"fields": "status,status_code", "access_token": page_tok},
+            timeout=15,
+        )
+        last_status = poll_resp.json()
+        sc = last_status.get("status_code", "")
+        logger.info(
+            "DIAG poll %d: container=%s status_code=%s",
+            poll_count, container_id, sc,
+        )
+        if sc in ("FINISHED", "ERROR", "EXPIRED"):
+            break
+        await asyncio.sleep(5)
+
+    return JSONResponse({
+        "ok": last_status.get("status_code") == "FINISHED",
+        "reencode": bool(reencode),
+        "video_url": public_url,
+        "head": head_info,
+        "specs": specs,
+        "file_size": target.stat().st_size,
+        "ig_account_id": ig_id,
+        "container_id": container_id,
+        "final_status": last_status,
+        "polls": poll_count,
+        # NOTE: we do NOT call /media_publish — the container stays unpublished.
+        # That way the test doesn't post to the user's feed.
+    })
+
+
 # ── HTTP reverse proxy to Streamlit ───────────────────────────────────────────
 
 _proxy_client = httpx.AsyncClient(
