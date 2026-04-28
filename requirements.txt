@@ -22,6 +22,9 @@ python-dotenv>=1.0
 # Instagram publishing
 requests>=2.31
 
+# CDN for IG video_url (R2 bypasses Railway's Fastly edge stripping HEAD Content-Length)
+boto3>=1.34
+
 # Dashboard
 streamlit>=1.35
 

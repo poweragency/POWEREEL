@@ -133,12 +133,29 @@ def _build_caption(
 
 
 def _build_public_video_url(video_path: Path) -> str | None:
-    """Build a public URL where Meta's servers can fetch the video from.
+    """Return a public URL Meta's CDN can fetch the video from.
 
-    Requires PUBLIC_BASE_URL env (Railway public domain) and the file to live
-    under PROJECT_ROOT/output/. Returns None if either condition fails — caller
-    will fall back to resumable upload.
+    Priority:
+      0. If IG_USE_RESUMABLE_UPLOAD=1, return None unconditionally so the
+         caller takes the resumable-upload branch (Meta uploads from us
+         instead of fetching). Avoids the Fastly HEAD Content-Length strip
+         entirely without needing an external CDN.
+      1. Cloudflare R2 — when R2_* env vars are set. Scales cleanly with
+         zero egress; bypasses Fastly the same way.
+      2. Railway `/_video/{key}/{filename}` — local/dev fallback only;
+         currently broken in production behind Fastly.
     """
+    if os.environ.get("IG_USE_RESUMABLE_UPLOAD") == "1":
+        return None
+
+    from src import cdn
+
+    if cdn.is_configured():
+        try:
+            return cdn.upload_and_presign(video_path)
+        except Exception as e:
+            logger.error("R2 upload failed (%s) — falling back to Railway URL", e)
+
     public_base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
     if not public_base:
         return None
@@ -149,7 +166,6 @@ def _build_public_video_url(video_path: Path) -> str | None:
     parts = rel.parts
     if len(parts) < 2:
         return None
-    # Server route: /_video/{key}/{filename}  (see server.py)
     return f"{public_base}/_video/{parts[0]}/{parts[-1]}"
 
 

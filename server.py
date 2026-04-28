@@ -153,16 +153,12 @@ import re as _re_video
 
 @app.api_route("/_video/{key}/{filename}", methods=["GET", "HEAD"])
 async def serve_temp_video(key: str, filename: str):
-    """Serve an output video file so Meta's CDN can fetch it for Reels publish.
+    """Serve an output video file (dev/local fallback only).
 
-    `key` is a date subfolder (e.g. '2026-04-26') OR an arbitrary opaque
-    key that matches an output dir, OR the literal "test" to serve a
-    bundled asset from static/test/. `filename` is the mp4 in that dir.
-
-    HEAD is included in `methods` so Meta's media fetcher gets video/mp4
-    Content-Type + Content-Length + Last-Modified from FileResponse.
-    Without HEAD on this route, the catch-all proxy below answers from
-    Streamlit with text/html and Meta rejects with error 2207076.
+    Production publishing uploads to Cloudflare R2 instead — see src/cdn.py.
+    Reason: Railway's Fastly edge strips `Content-Length` from HEAD
+    responses (verified empirically), so Meta's CDN rejects this URL with
+    error 2207076 regardless of how the origin sets the header.
     """
     if not _re_video.match(r'^[\w\-:.]+$', key):
         return JSONResponse({"error": "invalid key"}, status_code=400)
