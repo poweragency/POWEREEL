@@ -152,7 +152,7 @@ def _build_public_video_url(video_path: Path) -> str | None:
 
     if cdn.is_configured():
         try:
-            return cdn.upload_and_presign(video_path)
+            return cdn.upload_and_get_url(video_path)
         except Exception as e:
             logger.error("R2 upload failed (%s) — falling back to Railway URL", e)
 
