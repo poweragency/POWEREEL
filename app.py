@@ -632,7 +632,11 @@ def _social_icon(platform: str, size: int = 48) -> str:
 # ── Authentication + Landing Page ───────────────────────────────────────────
 
 def show_landing_and_login() -> bool:
-    """Show interactive landing page with embedded login. Returns True if authenticated."""
+    """Show interactive landing page with embedded login. Returns True if authenticated.
+
+    Visual design mirrors static/landing.html: Geist font, dark navy (#0b0d1a)
+    with brand red gradient (#ff2357 → #bf000f), surface cards, glass details.
+    """
     app_password = os.getenv("APP_PASSWORD", "")
     if not app_password:
         return True
@@ -641,131 +645,304 @@ def show_landing_and_login() -> bool:
     if st.session_state.authenticated:
         return True
 
-    # ── HERO section ──
-    st.markdown("""
-    <style>
-    .hero {
-        text-align: center;
-        padding: 60px 20px 40px;
-        background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 100%);
-        border-radius: 16px;
-        margin-bottom: 30px;
+    # ── Landing CSS (mirrors static/landing.html design tokens) ──
+    # Use st.html (not st.markdown) so the CSS isn't markdown-parsed
+    # (4-space indent inside a function would otherwise turn the block
+    # into a code block, leaking CSS as visible text). Geist font is loaded
+    # via @import because DOMPurify in st.html strips <link> tags.
+    st.html("""<style>
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap');
+:root {
+        --lm-bg: #0b0d1a;
+        --lm-surface: #12141f;
+        --lm-border: rgba(255,255,255,.08);
+        --lm-border-strong: rgba(255,255,255,.14);
+        --lm-text: #fafafa;
+        --lm-text-dim: #a1a1aa;
+        --lm-text-mute: #71717a;
+        --lm-brand: #ff2357;
+        --lm-grad-brand: linear-gradient(135deg,#ff2357 0%,#e40014 55%,#bf000f 100%);
+        --lm-shadow-glow: 0 20px 60px -10px rgba(255,35,87,.45);
     }
-    .hero h1 {
-        font-size: 3.5rem !important;
-        background: linear-gradient(90deg, #E8163C, #ff6b35);
+
+    /* Force the landing-page background on the whole app shell while the
+       landing is visible. Once authenticated the page reruns and the
+       wizard CSS reasserts itself. */
+    html, body, [data-testid="stAppViewContainer"], .main, .stApp {
+        background: var(--lm-bg) !important;
+        font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif !important;
+        color: var(--lm-text);
+    }
+    [data-testid="stHeader"] { background: transparent !important; }
+
+    /* Animated background mesh — same as landing.html */
+    .stApp::before {
+        content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+        background:
+          radial-gradient(ellipse 80% 60% at 20% 0%, rgba(255,35,87,.18), transparent 60%),
+          radial-gradient(ellipse 60% 50% at 80% 20%, rgba(228,0,20,.12), transparent 65%),
+          radial-gradient(ellipse 70% 50% at 50% 100%, rgba(80,30,60,.18), transparent 60%);
+        animation: lmBgFloat 18s ease-in-out infinite alternate;
+    }
+    @keyframes lmBgFloat {
+        0%   { transform: translate3d(0,0,0); }
+        50%  { transform: translate3d(2%, -1%, 0); }
+        100% { transform: translate3d(-2%, 1%, 0); }
+    }
+    .block-container { position: relative; z-index: 1; max-width: 1180px !important; padding-top: 1.5rem !important; }
+
+    /* Typography */
+    .lm-h1, .lm-h2, .lm-h3 { letter-spacing: -.02em; line-height: 1.15; margin: 0; color: var(--lm-text); }
+    .lm-grad {
+        background: var(--lm-grad-brand);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin: 0 0 12px !important;
-        font-weight: 800;
+        background-clip: text;
     }
-    .hero p {
-        font-size: 1.2rem;
-        color: #aaa;
-        max-width: 700px;
-        margin: 0 auto;
-    }
-    .feat-card {
-        background: #1a1a2e;
-        padding: 24px;
-        border-radius: 12px;
-        height: 100%;
-        border: 1px solid #2a2a3e;
-    }
-    .feat-card h3 {
-        color: #E8163C;
-        margin-top: 0;
-    }
-    .feat-card p {
-        color: #ccc;
-        font-size: 0.95rem;
-    }
-    @media (max-width: 768px) {
-        .hero h1 { font-size: 2rem !important; }
-        .hero p { font-size: 1rem; }
-        .hero { padding: 30px 15px; }
-    }
-    </style>
 
-    <div class="hero">
-        <h1>⚡ POWEREEL</h1>
-        <p>Genera Reel Instagram automatici con il tuo avatar AI. <br>
-        Notizie, script, voce, sottotitoli e pubblicazione: tutto in 5 minuti.</p>
+    /* Hero */
+    .lm-hero {
+        text-align: center; padding: 60px 24px 24px; max-width: 880px; margin: 0 auto;
+    }
+    .lm-hero-badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 8px 14px; border-radius: 999px;
+        background: rgba(255,35,87,.08); border: 1px solid rgba(255,35,87,.25);
+        color: #ff667f; font-size: .85rem; font-weight: 500;
+    }
+    .lm-hero-h1 {
+        font-size: clamp(2.4rem, 6vw, 4.4rem);
+        font-weight: 800; letter-spacing: -.035em; line-height: 1.05;
+        margin: 22px auto 16px;
+    }
+    .lm-hero-sub {
+        font-size: clamp(1rem, 1.5vw, 1.18rem);
+        max-width: 640px; margin: 0 auto 28px;
+        color: var(--lm-text-dim);
+    }
+    .lm-hero-pills {
+        display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-bottom: 8px;
+    }
+    .lm-pill {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 7px 14px; border-radius: 999px;
+        background: rgba(255,255,255,.04); border: 1px solid var(--lm-border);
+        font-size: .85rem; color: var(--lm-text-dim);
+    }
+
+    /* Section labels */
+    .lm-section-label {
+        display: inline-block;
+        font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase;
+        color: var(--lm-brand); font-weight: 600; margin-bottom: 12px;
+    }
+    .lm-section-h2 {
+        font-size: clamp(1.7rem, 3.2vw, 2.4rem); font-weight: 700;
+        margin: 0 0 8px; letter-spacing: -.02em;
+    }
+    .lm-section-sub { color: var(--lm-text-dim); margin: 0 0 32px; font-size: 1rem; }
+
+    /* Feature cards grid */
+    .lm-features-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+        margin-bottom: 56px;
+    }
+    @media (max-width: 880px) { .lm-features-grid { grid-template-columns: 1fr; } }
+    .lm-feat-card {
+        position: relative; padding: 26px 22px;
+        background: var(--lm-surface); border: 1px solid var(--lm-border);
+        border-radius: 16px; transition: transform .3s ease, border-color .3s ease;
+    }
+    .lm-feat-card:hover { transform: translateY(-3px); border-color: rgba(255,35,87,.35); }
+    .lm-feat-icon {
+        width: 44px; height: 44px; border-radius: 12px;
+        background: var(--lm-grad-brand);
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 1.3rem; margin-bottom: 16px;
+        box-shadow: 0 8px 22px -6px rgba(255,35,87,.5);
+    }
+    .lm-feat-card h3 {
+        font-size: 1.1rem; font-weight: 600; margin: 0 0 8px; color: var(--lm-text);
+    }
+    .lm-feat-card p {
+        margin: 0; color: var(--lm-text-dim); font-size: .92rem; line-height: 1.55;
+    }
+
+    /* "Come funziona" steps */
+    .lm-steps-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+        margin-bottom: 24px;
+    }
+    @media (max-width: 880px) { .lm-steps-grid { grid-template-columns: 1fr; } }
+    .lm-step-card {
+        padding: 26px 22px;
+        background: var(--lm-surface); border: 1px solid var(--lm-border);
+        border-radius: 16px;
+    }
+    .lm-step-num {
+        font-size: .75rem; font-weight: 700; letter-spacing: .18em;
+        color: var(--lm-text-mute); margin-bottom: 12px;
+    }
+    .lm-step-card h3 {
+        font-size: 1.05rem; font-weight: 600; margin: 0 0 8px; color: var(--lm-text);
+    }
+    .lm-step-card p {
+        margin: 0; color: var(--lm-text-dim); font-size: .92rem; line-height: 1.55;
+    }
+    .lm-time-note {
+        text-align: center; color: var(--lm-text-dim); font-size: .95rem;
+        padding: 14px; border: 1px solid var(--lm-border); border-radius: 12px;
+        background: rgba(255,255,255,.02);
+    }
+    .lm-time-note strong { color: var(--lm-text); }
+
+    /* Login section */
+    .lm-login-wrap { margin: 56px 0 24px; }
+    .lm-login-info {
+        padding: 26px 22px;
+        background: var(--lm-surface); border: 1px solid var(--lm-border);
+        border-radius: 16px; height: 100%;
+    }
+    .lm-login-info h4 {
+        font-size: 1.05rem; font-weight: 600; margin: 0 0 8px;
+        color: var(--lm-text);
+    }
+    .lm-login-info p { margin: 0 0 12px; color: var(--lm-text-dim); font-size: .92rem; line-height: 1.55; }
+    .lm-login-info a { color: var(--lm-brand); font-weight: 600; }
+    .lm-login-info a:hover { color: #ff667f; }
+
+    /* Streamlit form overrides — make inputs and submit button match landing */
+    div[data-testid="stForm"] {
+        background: var(--lm-surface);
+        border: 1px solid var(--lm-border);
+        border-radius: 16px; padding: 26px !important;
+    }
+    div[data-testid="stForm"] label {
+        color: var(--lm-text-dim) !important; font-weight: 500 !important;
+        font-size: .85rem !important; letter-spacing: .02em;
+    }
+    div[data-testid="stForm"] input {
+        background: rgba(255,255,255,.04) !important;
+        color: var(--lm-text) !important;
+        border: 1px solid var(--lm-border) !important;
+        border-radius: 10px !important;
+        font-family: 'Geist', sans-serif !important;
+    }
+    div[data-testid="stForm"] input:focus {
+        border-color: rgba(255,35,87,.55) !important;
+        box-shadow: 0 0 0 3px rgba(255,35,87,.12) !important;
+    }
+    div[data-testid="stForm"] [data-testid="stFormSubmitButton"] button {
+        background: var(--lm-grad-brand) !important;
+        color: white !important;
+        border: 0 !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        padding: 12px 22px !important;
+        box-shadow: 0 10px 30px -8px rgba(255,35,87,.5);
+        transition: transform .15s ease, box-shadow .25s ease;
+        font-family: 'Geist', sans-serif !important;
+    }
+    div[data-testid="stForm"] [data-testid="stFormSubmitButton"] button:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--lm-shadow-glow);
+    }
+    </style>""")
+
+    # ── Hero ──
+    st.html("""
+<div class="lm-hero">
+    <div class="lm-hero-badge">⚡ Beta privata · Reel automatici con AI</div>
+    <h1 class="lm-hero-h1"><span class="lm-grad">POWEREEL</span></h1>
+    <p class="lm-hero-sub">Genera Reel Instagram automatici con il tuo avatar AI.<br>
+    Notizie, script, voce, sottotitoli e pubblicazione: tutto in 5 minuti.</p>
+    <div class="lm-hero-pills">
+        <span class="lm-pill">📰 Notizie RSS</span>
+        <span class="lm-pill">🎭 Avatar HeyGen</span>
+        <span class="lm-pill">🎬 Sottotitoli karaoke</span>
+        <span class="lm-pill">📱 Multi-social</span>
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""")
 
-    # ── Features grid ──
-    st.markdown("### Cosa fa POWEREEL")
-    fc1, fc2, fc3 = st.columns(3)
-    with fc1:
-        st.markdown("""
-        <div class="feat-card">
-        <h3>📰 Notizie automatiche</h3>
-        <p>Scraping in tempo reale dai feed RSS che scegli (CoinDesk, Cointelegraph, Sole24Ore...).
-        Nessun copia-incolla manuale.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with fc2:
-        st.markdown("""
-        <div class="feat-card">
-        <h3>🎭 Avatar realistico</h3>
-        <p>Il tuo clone HeyGen parla la tua voce. Scegli avatar, look e ambientazione
-        direttamente dal pannello con anteprime visive.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with fc3:
-        st.markdown("""
-        <div class="feat-card">
-        <h3>🎬 Sottotitoli karaoke</h3>
-        <p>Sottotitoli stile virali (nicktrading_) sincronizzati parola per parola con la voce
-        grazie a Whisper. 4 preset pronti + personalizzazione totale.</p>
-        </div>
-        """, unsafe_allow_html=True)
+    # ── Features ──
+    st.html("""
+<div style="margin-top: 48px;">
+    <span class="lm-section-label">Funzionalità</span>
+    <h2 class="lm-section-h2">Cosa fa POWEREEL</h2>
+    <p class="lm-section-sub">Tutto quello che serve per pubblicare un Reel professionale, senza copia-incolla manuali.</p>
+</div>
+<div class="lm-features-grid">
+    <div class="lm-feat-card">
+        <div class="lm-feat-icon">📰</div>
+        <h3>Notizie automatiche</h3>
+        <p>Scraping in tempo reale dai feed RSS che scegli (CoinDesk, Cointelegraph, Sole24Ore…). Nessun copia-incolla manuale.</p>
+    </div>
+    <div class="lm-feat-card">
+        <div class="lm-feat-icon">🎭</div>
+        <h3>Avatar realistico</h3>
+        <p>Il tuo clone HeyGen parla la tua voce. Scegli avatar, look e ambientazione direttamente dal pannello con anteprime visive.</p>
+    </div>
+    <div class="lm-feat-card">
+        <div class="lm-feat-icon">🎬</div>
+        <h3>Sottotitoli karaoke</h3>
+        <p>Sottotitoli stile virali sincronizzati parola per parola con la voce grazie a Whisper. 4 preset pronti + personalizzazione totale.</p>
+    </div>
+    <div class="lm-feat-card">
+        <div class="lm-feat-icon">📱</div>
+        <h3>Pubblicazione Multi-Social</h3>
+        <p>Reel pubblicati su <strong style="color:var(--lm-text)">Instagram + Facebook</strong> con un click via Meta Graph API. Presto anche TikTok e YouTube Shorts.</p>
+    </div>
+    <div class="lm-feat-card">
+        <div class="lm-feat-icon">💰</div>
+        <h3>Centro Costi</h3>
+        <p>Vedi in tempo reale quanto costa ogni reel, crediti rimanenti HeyGen e proiezione mensile dei costi.</p>
+    </div>
+    <div class="lm-feat-card">
+        <div class="lm-feat-icon">✋</div>
+        <h3>Modalità ibrida</h3>
+        <p>Pieno automatico ($3/video) o semi-manuale ($0/video usando i crediti del piano HeyGen Business). Scegli tu.</p>
+    </div>
+</div>
+""")
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    fc4, fc5, fc6 = st.columns(3)
-    with fc4:
-        st.markdown("""
-        <div class="feat-card">
-        <h3>📱 Pubblicazione Multi-Social</h3>
-        <p>Reel pubblicati su <strong>Instagram + Facebook</strong> con un click via Meta Graph API.
-        Presto anche TikTok e YouTube Shorts.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with fc5:
-        st.markdown("""
-        <div class="feat-card">
-        <h3>💰 Centro Costi</h3>
-        <p>Vedi in tempo reale quanto costa ogni reel, crediti rimanenti HeyGen
-        e proiezione mensile dei costi.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with fc6:
-        st.markdown("""
-        <div class="feat-card">
-        <h3>✋ Modalità ibrida</h3>
-        <p>Pieno automatico ($3/video) o semi-manuale ($0/video usando i crediti del piano HeyGen Business).
-        Scegli tu.</p>
-        </div>
-        """, unsafe_allow_html=True)
+    # ── Come funziona ──
+    st.html("""
+<div>
+    <span class="lm-section-label">Workflow</span>
+    <h2 class="lm-section-h2">Come funziona</h2>
+    <p class="lm-section-sub">Tre passi. Il resto lo fa POWEREEL.</p>
+</div>
+<div class="lm-steps-grid">
+    <div class="lm-step-card">
+        <div class="lm-step-num">PASSO 01</div>
+        <h3>Configura una volta</h3>
+        <p>Avatar, voce, fonti notizie, stile sottotitoli, account Instagram. Pochi minuti, e non lo fai mai più.</p>
+    </div>
+    <div class="lm-step-card">
+        <div class="lm-step-num">PASSO 02</div>
+        <h3>Clicca "Genera"</h3>
+        <p>POWEREEL fa tutto: notizie → script Claude → avatar HeyGen → editing → sottotitoli karaoke.</p>
+    </div>
+    <div class="lm-step-card">
+        <div class="lm-step-num">PASSO 03</div>
+        <h3>Pubblica</h3>
+        <p>Automatico su Instagram Reels e Facebook, oppure scarichi e pubblichi tu. Anche programmato.</p>
+    </div>
+</div>
+<div class="lm-time-note"><strong>Tempo medio:</strong> 5 minuti dal click al reel pubblicato.</div>
+""")
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    # ── Login section ──
+    st.html("""
+<div class="lm-login-wrap">
+    <span class="lm-section-label">Accesso</span>
+    <h2 class="lm-section-h2">Accedi al tuo account</h2>
+    <p class="lm-section-sub">Inserisci email e password ricevute via mail.</p>
+</div>
+""")
 
-    # ── How it works ──
-    st.markdown("### Come funziona")
-    st.markdown("""
-    1. **Configura una volta** — avatar, voce, fonti notizie, stile sottotitoli, account Instagram
-    2. **Clicca "Genera"** — POWEREEL fa tutto: notizie → script Claude → avatar HeyGen → editing
-    3. **Pubblica** — automatico su Instagram Reels, oppure scarichi e pubblichi tu
-
-    **Tempo medio:** 5 minuti dal click al reel pubblicato.
-    """)
-
-    st.divider()
-
-    # ── Login form (email + password, multi-tenant) ──
-    st.markdown("### 🔒 Accedi al tuo account")
-    cl1, cl2 = st.columns([2, 3])
+    cl1, cl2 = st.columns([3, 2])
     with cl1:
         with st.form("login_form", clear_on_submit=False):
             email = st.text_input("Email", placeholder="tua@email.com")
@@ -783,11 +960,13 @@ def show_landing_and_login() -> bool:
                 else:
                     st.error("❌ Email o password errati")
     with cl2:
-        st.info(
-            "**POWEREEL è in beta privata.**\n\n"
-            "Per ottenere un account scrivi a **info@poweragency.it**\n\n"
-            "Riceverai email e password personali per accedere al tuo pannello dedicato."
-        )
+        st.html("""
+<div class="lm-login-info">
+    <h4>POWEREEL è in beta privata</h4>
+    <p>Per ottenere un account scrivi a <a href="mailto:info@poweragency.it">info@poweragency.it</a>.</p>
+    <p>Riceverai email e password personali per accedere al tuo pannello dedicato.</p>
+</div>
+""")
 
     return False
 
@@ -839,66 +1018,91 @@ def save_settings(s: dict) -> None:
         yaml.dump(s, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_heygen_data_cached(api_key: str) -> dict:
     """Get HeyGen avatars filtered to ONLY vertical/Reel format (9:16).
-    Cached per api_key so different users don't share results."""
+
+    Cached per api_key (1h) so different users don't share results.
+    All HTTP calls run in parallel via a ThreadPoolExecutor — on cache miss
+    this drops from ~30s serial to ~2-3s parallel.
+    """
     from PIL import Image
     from io import BytesIO
+    from concurrent.futures import ThreadPoolExecutor
 
     if not api_key:
         return {"groups": [], "looks": {}, "voices": []}
-    try:
+
+    headers = {"X-Api-Key": api_key}
+
+    def _fetch_groups_list():
+        r = httpx.get("https://api.heygen.com/v2/avatar_group.list",
+                      headers=headers, timeout=15)
+        return r.json().get("data", {}).get("avatar_group_list", [])
+
+    def _fetch_voices_list():
+        r = httpx.get("https://api.heygen.com/v2/voices",
+                      headers=headers, timeout=15)
+        return [v for v in r.json().get("data", {}).get("voices", [])
+                if v.get("type") == "custom"]
+
+    def _fetch_group_avatars(group):
         r = httpx.get(
-            "https://api.heygen.com/v2/avatar_group.list",
-            headers={"X-Api-Key": api_key}, timeout=15,
+            f"https://api.heygen.com/v2/avatar_group/{group['id']}/avatars",
+            headers=headers, timeout=15,
         )
-        groups_raw = r.json().get("data", {}).get("avatar_group_list", [])
+        if r.status_code != 200:
+            return group, []
+        return group, r.json().get("data", {}).get("avatar_list", [])
 
-        looks = {}
-        groups = []
-        for g in groups_raw:
-            r2 = httpx.get(
-                f"https://api.heygen.com/v2/avatar_group/{g['id']}/avatars",
-                headers={"X-Api-Key": api_key}, timeout=15,
-            )
-            if r2.status_code != 200:
-                continue
-            avatar_list = r2.json().get("data", {}).get("avatar_list", [])
+    def _is_vertical(img_url: str) -> bool:
+        try:
+            r = httpx.get(img_url, timeout=10)
+            img = Image.open(BytesIO(r.content))
+            w, h = img.size
+            return h > w
+        except Exception:
+            return False
 
-            vertical_looks = []
-            for a in avatar_list:
+    try:
+        # Wave 1: groups list + voices in parallel
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            groups_future = pool.submit(_fetch_groups_list)
+            voices_future = pool.submit(_fetch_voices_list)
+            groups_raw = groups_future.result()
+            voices = voices_future.result()
+
+        if not groups_raw:
+            return {"groups": [], "looks": {}, "voices": voices}
+
+        # Wave 2: per-group avatar lists in parallel
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            group_results = list(pool.map(_fetch_group_avatars, groups_raw))
+
+        # Collect every (group, avatar) pair we need to orientation-check
+        candidates = []  # list of (group_name, look_id, name, img_url)
+        for group, avatars in group_results:
+            for a in avatars:
                 lid = a.get("id") or a.get("avatar_id")
-                if not lid:
-                    continue
                 img_url = a.get("image_url", "")
-                if not img_url or not img_url.startswith("http"):
+                if not lid or not img_url or not img_url.startswith("http"):
                     continue
-                # Check if vertical (Reel format)
-                try:
-                    img_r = httpx.get(img_url, timeout=10)
-                    img = Image.open(BytesIO(img_r.content))
-                    w, h = img.size
-                    if h <= w:
-                        continue  # skip non-vertical
-                except Exception:
-                    continue
+                candidates.append((group["name"], lid, a.get("name", "Default"), img_url))
 
-                vertical_looks.append({
-                    "look_id": lid,
-                    "name": a.get("name", "Default"),
-                    "image_url": img_url,
-                })
+        # Wave 3: parallel orientation check (one HTTP GET per candidate image)
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            verticals = list(pool.map(lambda c: _is_vertical(c[3]), candidates))
 
-            if vertical_looks:
-                looks[g["name"]] = vertical_looks
-                groups.append(g)
+        looks: dict[str, list] = {}
+        for (gname, lid, name, img_url), is_vert in zip(candidates, verticals):
+            if not is_vert:
+                continue
+            looks.setdefault(gname, []).append({
+                "look_id": lid, "name": name, "image_url": img_url,
+            })
 
-        rv = httpx.get(
-            "https://api.heygen.com/v2/voices",
-            headers={"X-Api-Key": api_key}, timeout=15,
-        )
-        voices = [v for v in rv.json().get("data", {}).get("voices", []) if v.get("type") == "custom"]
+        # Preserve original group order, but keep only groups with vertical looks
+        groups = [g for g in groups_raw if looks.get(g["name"])]
 
         return {"groups": groups, "looks": looks, "voices": voices}
     except Exception as e:
@@ -914,7 +1118,7 @@ def get_heygen_data() -> dict:
     return _get_heygen_data_cached(api_key)
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600, show_spinner=False)
 def _get_heygen_credits_cached(api_key: str) -> int:
     if not api_key:
         return -1
@@ -1042,7 +1246,13 @@ def get_generation_result() -> str | None:
 # ── State ────────────────────────────────────────────────────────────────────
 
 settings = load_settings()
-data = get_heygen_data()
+# Lazy-loaded HeyGen data: only fetched on steps that actually need avatars/voices
+# (Step 1, 2, and the manual-fallback panel). Steps 3-6 skip the call entirely.
+def _heygen_data():
+    if "_heygen_data_loaded" not in st.session_state:
+        with st.spinner("Carico avatar e voci HeyGen…"):
+            st.session_state._heygen_data_loaded = get_heygen_data()
+    return st.session_state._heygen_data_loaded
 
 # ── Pricing constants (admin cost analysis) ─────────────────────────────────
 
@@ -1741,6 +1951,7 @@ if st.session_state.step == 1:
         unsafe_allow_html=True,
     )
 
+    data = _heygen_data()
     groups = data["groups"]
     all_looks = data["looks"]
     current_avatar = settings["heygen"]["avatar_id"]
@@ -1868,7 +2079,7 @@ elif st.session_state.step == 2:
     st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[2]}</h1>', unsafe_allow_html=True)
     st.caption("Scegli quale voce clonata usare")
 
-    voices = data["voices"]
+    voices = _heygen_data()["voices"]
     current_voice = settings["heygen"]["voice_id"]
 
     if voices:
@@ -2459,17 +2670,18 @@ elif st.session_state.step == 7:
             )
 
             # Show user which avatar/voice to use - find the friendly name
+            _hg = _heygen_data()
             current_avatar_id = settings["heygen"]["avatar_id"]
             avatar_name = "?"
             look_name = "?"
-            for gname, looks in data["looks"].items():
+            for gname, looks in _hg["looks"].items():
                 for look in looks:
                     if look["look_id"] == current_avatar_id:
                         avatar_name = gname
                         look_name = look["name"]
                         break
             voice_name = "?"
-            for v in data["voices"]:
+            for v in _hg["voices"]:
                 if v["voice_id"] == settings["heygen"]["voice_id"]:
                     voice_name = f"{v['name']} ({v['language']})"
                     break
