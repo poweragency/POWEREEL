@@ -97,63 +97,131 @@ st.markdown(_MOBILE_CSS, unsafe_allow_html=True)
 # ── Premium wizard CSS ───────────────────────────────────────────────────────
 _WIZARD_CSS = """
 <style>
-/* Page typography accent */
+/* Page typography — NEON PURPLE H1 (works on dark + light) */
 .pwr-h1 {
-    font-size: 2.2rem !important;
+    font-size: 2.15rem !important;
     font-weight: 800 !important;
-    letter-spacing: -.025em !important;
-    background: linear-gradient(135deg, #fafafa 0%, #ff667f 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    letter-spacing: -.028em !important;
+    color: #c084fc !important;
+    -webkit-text-fill-color: #c084fc !important;
+    background: none !important;
     margin: 0 0 6px !important;
     line-height: 1.1 !important;
+    text-shadow:
+        0 0 4px rgba(192, 132, 252, .9),
+        0 0 12px rgba(192, 132, 252, .65),
+        0 0 24px rgba(168, 85, 247, .45),
+        0 0 48px rgba(168, 85, 247, .28);
+    animation: pwr-neon-pulse 3.4s ease-in-out infinite;
+}
+@keyframes pwr-neon-pulse {
+    0%, 100% { text-shadow:
+        0 0 4px rgba(192, 132, 252, .9),
+        0 0 12px rgba(192, 132, 252, .65),
+        0 0 24px rgba(168, 85, 247, .45),
+        0 0 48px rgba(168, 85, 247, .28); }
+    50% { text-shadow:
+        0 0 6px rgba(192, 132, 252, 1),
+        0 0 18px rgba(192, 132, 252, .85),
+        0 0 36px rgba(168, 85, 247, .6),
+        0 0 64px rgba(168, 85, 247, .4); }
 }
 .pwr-caption {
-    color: #a1a1aa;
+    color: var(--pwr-muted, #a1a1aa);
     font-size: .98rem;
     margin-bottom: 28px;
 }
 
-/* Section labels (PASSO, AVATAR, LOOK, etc.) */
+/* Section labels (PASSO, AVATAR, LOOK, etc.) — neon-violet robotic chip */
 .pwr-section-label {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: 2px;
     text-transform: uppercase;
-    color: #ff667f;
-    background: rgba(255, 35, 87, .10);
-    border: 1px solid rgba(255, 35, 87, .25);
-    padding: 5px 11px;
-    border-radius: 999px;
+    color: #c084fc;
+    background: linear-gradient(180deg, rgba(168, 85, 247, .12) 0%, rgba(168, 85, 247, .04) 100%);
+    border: 1px solid rgba(168, 85, 247, .45);
+    padding: 6px 12px;
+    border-radius: 8px;
     margin-bottom: 14px;
+    text-shadow:
+        0 0 4px rgba(192, 132, 252, .7),
+        0 0 10px rgba(168, 85, 247, .4);
+    box-shadow:
+        inset 0 1px 0 rgba(192, 132, 252, .15),
+        0 0 12px -2px rgba(168, 85, 247, .35);
+    /* tech corner notches */
+    clip-path: polygon(
+        6px 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px),
+        calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px), 0 6px
+    );
 }
 
 /* Avatar / Look card (used for both group preview and per-look) */
 .pwr-card {
     position: relative;
-    background: linear-gradient(180deg, #1a1a2e 0%, #141422 100%);
+    max-width: 240px;                  /* keep cards compact + uniform */
+    margin: 0 auto;                    /* center inside Streamlit column */
+    background: linear-gradient(180deg, #1c1c30 0%, #0e0e1a 100%);
     border: 1px solid rgba(255, 255, 255, .08);
-    border-radius: 16px;
+    border-radius: 18px;
     padding: 8px 8px 0;
-    transition: transform .28s cubic-bezier(.2,.7,.3,1),
+    transition: transform .35s cubic-bezier(.2,.7,.3,1),
                 border-color .25s ease,
-                box-shadow .28s ease;
+                box-shadow .35s ease;
     overflow: hidden;
     cursor: pointer;
+    /* layered depth — top highlight + ambient drop */
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.08),
+        inset 0 -28px 40px rgba(0,0,0,.35),
+        0 10px 24px -12px rgba(15, 15, 30, .55);
 }
+/* robotic corner brackets — frame the image area */
+.pwr-card-img::before,
+.pwr-card-img::after {
+    content: "";
+    position: absolute;
+    width: 18px; height: 18px;
+    border: 1.5px solid rgba(255, 35, 87, .55);
+    z-index: 3;
+    pointer-events: none;
+    opacity: .4;
+    transition: opacity .3s ease, border-color .3s ease, width .3s ease, height .3s ease;
+}
+.pwr-card-img::before {
+    top: 6px; left: 6px;
+    border-right: 0; border-bottom: 0;
+    border-top-left-radius: 8px;
+}
+.pwr-card-img::after {
+    bottom: 6px; right: 6px;
+    border-left: 0; border-top: 0;
+    border-bottom-right-radius: 8px;
+}
+.pwr-card:hover .pwr-card-img::before,
+.pwr-card:hover .pwr-card-img::after { opacity: 1; width: 22px; height: 22px; }
+.pwr-card.selected .pwr-card-img::before,
+.pwr-card.selected .pwr-card-img::after { opacity: 1; border-color: #ff2357; }
+
 .pwr-card:hover {
-    transform: translateY(-4px);
-    border-color: rgba(255, 35, 87, .35);
-    box-shadow: 0 18px 40px -14px rgba(255, 35, 87, .35);
+    transform: translateY(-5px) scale(1.012);
+    border-color: rgba(255, 35, 87, .4);
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.12),
+        0 0 0 1px rgba(255, 35, 87, .18),
+        0 22px 44px -14px rgba(255, 35, 87, .4);
 }
 .pwr-card.selected {
-    border: 2px solid #ff2357;
+    border: 1.5px solid rgba(255, 35, 87, .9);
     box-shadow:
-        0 0 0 3px rgba(255, 35, 87, .12),
-        0 18px 50px -12px rgba(255, 35, 87, .55);
-    background: linear-gradient(180deg, rgba(255,35,87,.07) 0%, #141422 65%);
+        inset 0 1px 0 rgba(255, 255, 255, .14),
+        0 0 0 3px rgba(255, 35, 87, .15),
+        0 22px 50px -14px rgba(255, 35, 87, .55);
+    background: linear-gradient(180deg, rgba(255,35,87,.10) 0%, #0e0e1a 70%);
 }
 
 /* Image wrapper — 4/5 aspect, faces at upper-third */
@@ -161,9 +229,12 @@ _WIZARD_CSS = """
     position: relative;
     width: 100%;
     aspect-ratio: 4 / 5;
-    border-radius: 11px;
+    border-radius: 12px;
     overflow: hidden;
     background: linear-gradient(135deg, #0f0f1e, #1a1a2e);
+    box-shadow:
+        inset 0 0 0 1px rgba(255,255,255,.05),
+        inset 0 6px 18px rgba(0,0,0,.4);
 }
 .pwr-card-img img {
     width: 100%;
@@ -175,16 +246,6 @@ _WIZARD_CSS = """
 }
 .pwr-card:hover .pwr-card-img img { transform: scale(1.05); }
 
-/* Gradient overlay at bottom of image, for premium feel */
-.pwr-card-img::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0 0;
-    height: 35%;
-    background: linear-gradient(0deg, rgba(10,10,18,.85) 0%, transparent 100%);
-    pointer-events: none;
-}
-
 /* Wide variant — for video-frame previews (subtitle styles, HeyGen built-in) */
 .pwr-card-img.wide {
     aspect-ratio: 16 / 9;
@@ -193,9 +254,6 @@ _WIZARD_CSS = """
 .pwr-card-img.wide img {
     object-fit: contain;       /* preserve full preview, don't crop subtitles */
     object-position: center;
-}
-.pwr-card-img.wide::after {
-    display: none;             /* no bottom-fade overlay on previews */
 }
 .pwr-card:hover .pwr-card-img.wide img { transform: none; }  /* no zoom on previews */
 
@@ -321,7 +379,7 @@ h2, h3, .stSubheader {
     padding: 12px 14px;
 }
 
-/* ── Account cards (Step 6) ───────────────────────────────────── */
+/* ── Account cards (Step 5) ───────────────────────────────────── */
 .pwr-account-card .pwr-acct-banner {
     position: relative;
     width: 100%;
@@ -997,11 +1055,18 @@ if st.session_state.get("user_email"):
         _apply_user_api_keys(_curr_user)
 
 
-# ── Top bar with logout ──
+# ── Top bar with theme toggle + logout ──
 def render_top_bar():
-    """Render top-right logout button."""
-    cols = st.columns([6, 1])
+    """Render top-right theme toggle and logout buttons."""
+    cols = st.columns([5, 1, 1])
     with cols[1]:
+        current = st.session_state.get("theme", "dark")
+        # icon shows the OTHER mode (what you'll switch to)
+        icon = "☀️ Chiaro" if current == "dark" else "🌙 Scuro"
+        if st.button(icon, key="theme_toggle", use_container_width=True, help="Cambia tema"):
+            st.session_state.theme = "light" if current == "dark" else "dark"
+            st.rerun()
+    with cols[2]:
         if st.button("🚪 Logout", key="top_logout", use_container_width=True):
             logout()
 
@@ -1283,14 +1348,14 @@ def _video_count_from_outputs() -> int:
 def _read_step() -> int:
     if STEP_FILE.exists():
         try:
-            return max(1, min(int(STEP_FILE.read_text().strip()), 7))
+            return max(1, min(int(STEP_FILE.read_text().strip()), 6))
         except Exception:
             return 1
     return 1
 
 
 def goto_step(n: int):
-    n = max(1, min(n, 7))
+    n = max(1, min(n, 6))
     st.session_state.step = n
     STEP_FILE.write_text(str(n))
 
@@ -1303,26 +1368,83 @@ if "view" not in st.session_state:
 
 STEPS = [
     "1. Avatar e Look",
-    "2. Voce",
-    "3. Fonti Notizie",
-    "4. Script e Tono",
-    "5. Stile Sottotitoli",
-    "6. Distribuzione Social",
-    "7. Genera e Pubblica",
+    "2. Fonti Notizie",
+    "3. Script e Tono",
+    "4. Stile Sottotitoli",
+    "5. Distribuzione Social",
+    "6. Genera e Pubblica",
 ]
 
 STEP_TITLES = {
     1: "Passo 1 — Avatar e Look",
-    2: "Passo 2 — Voce",
-    3: "Passo 3 — Fonti Notizie",
-    4: "Passo 4 — Script e Tono",
-    5: "Passo 5 — Stile Sottotitoli",
-    6: "Passo 6 — Distribuzione Social",
-    7: "Passo 7 — Genera e Pubblica",
+    2: "Passo 2 — Fonti Notizie",
+    3: "Passo 3 — Script e Tono",
+    4: "Passo 4 — Stile Sottotitoli",
+    5: "Passo 5 — Distribuzione Social",
+    6: "Passo 6 — Genera e Pubblica",
 }
 
 
-# ── Top bar (logout) ──
+# ── Theme (dark/light) — applied BEFORE the top bar so toggle re-runs cleanly ──
+_THEME = st.session_state.get("theme", "dark")
+if _THEME == "light":
+    _THEME_CSS = """
+    <style>
+    /* LIGHT MODE — page bg light, sidebar stays dark for contrast */
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    .stApp,
+    [data-testid="stHeader"] {
+        background: #f5f3ff !important;  /* very subtle violet tint */
+    }
+    .block-container { color: #18181b; }
+    /* generic text under main content */
+    [data-testid="stMain"] p,
+    [data-testid="stMain"] li,
+    [data-testid="stMain"] span,
+    [data-testid="stMain"] label,
+    [data-testid="stMain"] h2,
+    [data-testid="stMain"] h3,
+    [data-testid="stMain"] h4 { color: #18181b; }
+    [data-testid="stMain"] .pwr-caption { color: #52525b !important; }
+    /* buttons in light mode */
+    [data-testid="stMain"] .stButton > button {
+        background: rgba(168, 85, 247, .06) !important;
+        color: #2e1065 !important;
+        border-color: rgba(168, 85, 247, .25) !important;
+    }
+    [data-testid="stMain"] .stButton > button:hover:not(:disabled) {
+        background: rgba(168, 85, 247, .12) !important;
+        border-color: rgba(168, 85, 247, .45) !important;
+    }
+    /* dividers */
+    [data-testid="stMain"] hr,
+    [data-testid="stMain"] [data-testid="stDivider"] {
+        border-top-color: rgba(168, 85, 247, .15) !important;
+    }
+    /* warnings/alerts get readable bg */
+    [data-testid="stMain"] [data-testid="stAlert"] {
+        background: #ffffff !important;
+        border: 1px solid rgba(168, 85, 247, .2) !important;
+    }
+    </style>
+    """
+else:
+    _THEME_CSS = """
+    <style>
+    /* DARK MODE — page bg deep, with subtle violet undertone */
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    .stApp,
+    [data-testid="stHeader"] {
+        background: #0a0a14 !important;
+    }
+    </style>
+    """
+st.markdown(_THEME_CSS, unsafe_allow_html=True)
+
+
+# ── Top bar (theme toggle + logout) ──
 render_top_bar()
 
 
@@ -1500,10 +1622,10 @@ if st.session_state.view == "api_keys":
                     unsafe_allow_html=True,
                 )
         with c2:
-            if st.button("📋 Vai allo Step 6 → scegli pagine",
+            if st.button("📋 Vai allo Step 5 → scegli pagine",
                          use_container_width=True, type="primary"):
                 st.session_state.view = "wizard"
-                st.session_state.step = 6
+                st.session_state.step = 5
                 st.rerun()
     else:
         # ── NOT CONNECTED: pre-flight checklist + CTA + privacy reassurance ──
@@ -2073,42 +2195,10 @@ if st.session_state.step == 1:
     nav_buttons(1, can_proceed)
 
 
-# ── STEP 2: Voce ─────────────────────────────────────────────────────────────
+# ── STEP 2: Fonti Notizie ────────────────────────────────────────────────────
 
 elif st.session_state.step == 2:
     st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[2]}</h1>', unsafe_allow_html=True)
-    st.caption("Scegli quale voce clonata usare")
-
-    voices = _heygen_data()["voices"]
-    current_voice = settings["heygen"]["voice_id"]
-
-    if voices:
-        for voice in voices:
-            is_selected = voice["voice_id"] == current_voice
-            col1, col2, col3 = st.columns([3, 3, 1])
-            with col1:
-                icon = "✅" if is_selected else "🎙️"
-                st.write(f"{icon} **{voice['name']}** — {voice['language']}")
-            with col2:
-                if voice.get("preview_audio"):
-                    st.audio(voice["preview_audio"])
-            with col3:
-                if not is_selected:
-                    if st.button("Usa", key=f"vc_{voice['voice_id']}", use_container_width=True):
-                        settings["heygen"]["voice_id"] = voice["voice_id"]
-                        save_settings(settings)
-                        st.rerun()
-    else:
-        st.warning("Nessuna voce custom trovata")
-
-    st.divider()
-    nav_buttons(2, bool(settings["heygen"]["voice_id"]))
-
-
-# ── STEP 3: Fonti Notizie ────────────────────────────────────────────────────
-
-elif st.session_state.step == 3:
-    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[3]}</h1>', unsafe_allow_html=True)
     st.caption("I siti RSS da cui prendere le notizie per generare lo script")
 
     feeds = settings["scraper"]["feeds"]
@@ -2152,21 +2242,29 @@ elif st.session_state.step == 3:
         st.success("Salvato")
 
     st.divider()
-    nav_buttons(3, len(feeds) > 0)
+    nav_buttons(2, len(feeds) > 0)
 
 
-# ── STEP 4: Script & Tono ────────────────────────────────────────────────────
+# ── STEP 3: Script & Tono ────────────────────────────────────────────────────
 
-elif st.session_state.step == 4:
-    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[4]}</h1>', unsafe_allow_html=True)
+elif st.session_state.step == 3:
+    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[3]}</h1>', unsafe_allow_html=True)
     st.caption("Come Claude scrive lo script del reel")
 
     col1, col2 = st.columns(2)
     with col1:
+        # Bumped minimum from 15s to 20s — under 20s the script can't fit
+        # hook + 2 news + CTA without sounding rushed.
+        current_dur = settings["scriptwriter"]["target_duration_seconds"]
+        if current_dur < 20:
+            current_dur = 20
+            settings["scriptwriter"]["target_duration_seconds"] = 20
         settings["scriptwriter"]["target_duration_seconds"] = st.slider(
-            "Durata video (secondi)", 15, 90,
-            settings["scriptwriter"]["target_duration_seconds"],
+            "Durata video (secondi)", 20, 90, current_dur,
         )
+        # Live cost estimate (HEYGEN_USD_PER_CREDIT defined at top of file)
+        _est = settings["scriptwriter"]["target_duration_seconds"] * HEYGEN_USD_PER_CREDIT
+        st.caption(f"💰 Stima costo HeyGen API: **~${_est:.2f}/reel** ({settings['scriptwriter']['target_duration_seconds']} crediti)")
     with col2:
         settings["scriptwriter"]["tone"] = st.text_input(
             "Tono", settings["scriptwriter"]["tone"],
@@ -2183,16 +2281,16 @@ elif st.session_state.step == 4:
         st.success("Salvato")
 
     st.divider()
-    nav_buttons(4, True)
+    nav_buttons(3, True)
 
 
-# ── STEP 5: Stile Sottotitoli ────────────────────────────────────────────────
+# ── STEP 4: Stile Sottotitoli ────────────────────────────────────────────────
 
-elif st.session_state.step == 5:
+elif st.session_state.step == 4:
     import base64
 
     st.markdown(
-        f'<h1 class="pwr-h1" translate="no" lang="it">{STEP_TITLES[5]}</h1>',
+        f'<h1 class="pwr-h1" translate="no" lang="it">{STEP_TITLES[4]}</h1>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -2214,7 +2312,7 @@ elif st.session_state.step == 5:
 
     # ── PRESET CARDS ──
     st.markdown(
-        '<div class="pwr-section-label">🎬 Step 5 · Stile sottotitoli</div>',
+        '<div class="pwr-section-label">🎬 Step 4 · Stile sottotitoli</div>',
         unsafe_allow_html=True,
     )
 
@@ -2353,18 +2451,21 @@ elif st.session_state.step == 5:
                 st.success("✅ Salvato — il prossimo reel userà questo stile")
 
     st.divider()
-    nav_buttons(5, True)
+    nav_buttons(4, True)
 
 
-# ── STEP 6: Instagram ────────────────────────────────────────────────────────
+# ── STEP 5: Instagram ────────────────────────────────────────────────────────
 
-elif st.session_state.step == 6:
+elif st.session_state.step == 5:
     st.markdown(
-        f'<h1 class="pwr-h1" translate="no" lang="it">{STEP_TITLES[6]}</h1>',
+        f'<h1 class="pwr-h1" translate="no" lang="it">{STEP_TITLES[5]}</h1>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="pwr-caption">Scegli su quali account pubblicare. Selezionane uno o tutti — un click pubblica ovunque.</div>',
+        '<div class="pwr-caption">'
+        'Scegli su quali account pubblicare il <b>prossimo</b> reel. '
+        'La selezione resta salvata per i video successivi — modificala qui ogni volta che vuoi cambiare destinazione.'
+        '</div>',
         unsafe_allow_html=True,
     )
 
@@ -2388,16 +2489,13 @@ elif st.session_state.step == 6:
                 "instagram_username": user_keys.get("instagram_username", ""),
             }]
 
-    # First-visit default: auto-select all available pages so the user can
-    # proceed without clicking on every card. They can deselect from the UI.
-    if "selected_pages" not in publisher_cfg and meta_pages:
-        publisher_cfg["selected_pages"] = [p["page_id"] for p in meta_pages]
-        save_settings(settings)
+    # No auto-default: force the user to consciously pick which accounts get
+    # the next reel. Keeps publishing intentional rather than accidental.
     selected_page_ids = set(publisher_cfg.get("selected_pages", []))
 
     # ── Account cards ──
     st.markdown(
-        '<div class="pwr-section-label">📡 Step 6 · Account collegati</div>',
+        '<div class="pwr-section-label">📡 Step 5 · Account collegati</div>',
         unsafe_allow_html=True,
     )
 
@@ -2517,13 +2615,13 @@ elif st.session_state.step == 6:
     can_proceed = len(selected_page_ids) > 0
     if not can_proceed:
         st.warning("Seleziona almeno un account per proseguire")
-    nav_buttons(6, can_proceed)
+    nav_buttons(5, can_proceed)
 
 
-# ── STEP 7: Genera & Pubblica ────────────────────────────────────────────────
+# ── STEP 6: Genera & Pubblica ────────────────────────────────────────────────
 
-elif st.session_state.step == 7:
-    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[7]}</h1>', unsafe_allow_html=True)
+elif st.session_state.step == 6:
+    st.markdown(f'<h1 translate="no" lang="it">{STEP_TITLES[6]}</h1>', unsafe_allow_html=True)
     st.caption("Genera il reel e pubblicalo su Instagram")
 
     today = date.today().isoformat()
@@ -2538,6 +2636,10 @@ elif st.session_state.step == 7:
 
     current_mode = settings.get("generation_mode", "api")
 
+    # Live cost estimate based on currently configured duration
+    _dur = settings["scriptwriter"]["target_duration_seconds"]
+    _api_cost = _dur * HEYGEN_USD_PER_CREDIT
+
     with mode_col1:
         is_api = current_mode == "api"
         border = "3px solid #E8163C" if is_api else "1px solid #444"
@@ -2545,7 +2647,8 @@ elif st.session_state.step == 7:
             f'<div style="border:{border}; border-radius:12px; padding:12px;">'
             f'<h4 style="margin:0;">🤖 Pieno Automatico (API)</h4>'
             f'<p style="margin:4px 0; font-size:13px; color:#aaa;">'
-            f'Tutto in 1 click. POWEREEL chiama HeyGen API. <b>Costo: ~$3 a video</b>'
+            f'Tutto in 1 click. POWEREEL chiama HeyGen API. '
+            f'<b>Costo: ~${_api_cost:.2f}/reel</b> ({_dur}s × $0.066/credito)'
             f'</p></div>',
             unsafe_allow_html=True,
         )
@@ -2562,7 +2665,8 @@ elif st.session_state.step == 7:
             f'<div style="border:{border}; border-radius:12px; padding:12px;">'
             f'<h4 style="margin:0;">✋ Semi-Manuale (HeyGen Dashboard)</h4>'
             f'<p style="margin:4px 0; font-size:13px; color:#aaa;">'
-            f'3 click in più: generi avatar su HeyGen.com (crediti del piano). <b>Costo: $0</b>'
+            f'Apre HeyGen.com — dovrai <b>rifare avatar+script lì</b> (HeyGen non importa la config Powereel). '
+            f'Usa i crediti del tuo piano: <b>$0/reel marginale</b>.'
             f'</p></div>',
             unsafe_allow_html=True,
         )
@@ -2571,6 +2675,62 @@ elif st.session_state.step == 7:
             settings["generation_mode"] = "manual"
             save_settings(settings)
             st.rerun()
+
+    st.divider()
+
+    # ── Publishing destinations summary ──
+    publisher_cfg_ro = settings.get("publisher", {}) or {}
+    selected_ids_ro = set(publisher_cfg_ro.get("selected_pages", []))
+    user_keys_ro = (_users.get_user(st.session_state.user_email) or {}).get("api_keys", {}) or {}
+    pages_ro = user_keys_ro.get("meta_pages", []) or []
+    if not pages_ro and (user_keys_ro.get("facebook_page_id") or user_keys_ro.get("instagram_business_account_id")):
+        pages_ro = [{
+            "page_id": user_keys_ro.get("facebook_page_id", ""),
+            "page_name": user_keys_ro.get("facebook_page_name", "") or "Facebook Page",
+            "instagram_business_account_id": user_keys_ro.get("instagram_business_account_id", ""),
+            "instagram_username": user_keys_ro.get("instagram_username", ""),
+        }]
+    selected_pages_ro = [p for p in pages_ro if p["page_id"] in selected_ids_ro]
+
+    if selected_pages_ro:
+        rows = []
+        for p in selected_pages_ro:
+            ig_chip = (
+                f'<span style="background:linear-gradient(135deg,#fa7e1e,#d62976,#4f5bd5);'
+                f'color:white;font-size:.72rem;font-weight:700;padding:3px 9px;'
+                f'border-radius:999px;margin-left:8px;">@{p.get("instagram_username","ig")}</span>'
+                if p.get("instagram_business_account_id") else ""
+            )
+            rows.append(
+                f'<div style="display:flex;align-items:center;gap:12px;padding:8px 0;">'
+                f'<div style="width:28px;height:28px;background:#1877f2;color:white;'
+                f'font-weight:800;font-size:.95rem;font-family:Georgia,serif;'
+                f'border-radius:6px;display:inline-flex;align-items:center;justify-content:center;'
+                f'flex-shrink:0;">f</div>'
+                f'<span style="color:#fafafa;font-weight:600;">{p.get("page_name","?")}</span>'
+                f'{ig_chip}</div>'
+            )
+        st.markdown(
+            f'<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);'
+            f'border-left:3px solid #22c55e;border-radius:12px;padding:16px 20px;margin:8px 0;">'
+            f'<div style="font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;'
+            f'color:#4ade80;font-weight:700;margin-bottom:10px;">'
+            f'✓ Pubblicherò questo reel su {len(selected_pages_ro)} account'
+            f'</div>{"".join(rows)}</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("✏️ Cambia account di destinazione", key="back_to_step5",
+                     use_container_width=False, type="secondary"):
+            goto_step(5)
+    else:
+        st.warning(
+            "⚠️ **Nessun account selezionato per la pubblicazione.** "
+            "Vai allo **Step 5 — Distribuzione Social** e attiva almeno un account, "
+            "altrimenti il reel viene generato ma non pubblicato (resta solo in download)."
+        )
+        if st.button("→ Vai a Step 5 (Distribuzione Social)", key="goto_step5",
+                     use_container_width=False, type="primary"):
+            goto_step(5)
 
     st.divider()
 
@@ -2829,7 +2989,7 @@ elif st.session_state.step == 7:
 
         platforms = settings.get("publisher", {}).get("enabled_platforms", ["instagram"])
         if not platforms:
-            st.warning("Nessuna piattaforma selezionata — torna allo Step 6.")
+            st.warning("Nessuna piattaforma selezionata — torna allo Step 5.")
         else:
             label = "📤 Pubblica su " + " + ".join(
                 {"instagram": "Instagram", "facebook": "Facebook"}[p]
@@ -2885,4 +3045,4 @@ elif st.session_state.step == 7:
                     "Se una fallisce, le altre continuano."
                 )
 
-    nav_buttons(7, True, next_label="Fine")
+    nav_buttons(6, True, next_label="Fine")
