@@ -2580,6 +2580,56 @@ elif st.session_state.step == 5:
                         save_settings(settings)
                         st.rerun()
 
+    st.divider()
+
+    # ── Account management shortcut ──
+    # Lets the user re-OAuth (refresh page list / add more pages from the same
+    # Meta profile) OR jump to the full API Keys page to add accounts from a
+    # different Meta profile.
+    st.markdown(
+        '<div class="pwr-section-label">⚙️ Gestisci account collegati</div>',
+        unsafe_allow_html=True,
+    )
+    public_base = os.getenv("PUBLIC_BASE_URL", "")
+    oauth_url = (
+        f"{public_base}/oauth/facebook/start?email={st.session_state.user_email}"
+        if public_base else ""
+    )
+
+    mc1, mc2 = st.columns(2)
+    with mc1:
+        if oauth_url:
+            st.markdown(
+                f'<a href="{oauth_url}" target="_blank" '
+                f'style="display:flex;align-items:center;justify-content:center;gap:10px;'
+                f'padding:14px;background:#1877f2;color:white !important;'
+                f'border-radius:10px;text-decoration:none;font-weight:600;'
+                f'box-shadow:0 8px 22px -8px rgba(24,119,242,.5);">'
+                f'{_social_icon("facebook", 28)}'
+                f'<span>🔄 Riconnetti / aggiungi pagine al tuo Facebook</span>'
+                f'</a>'
+                f'<div style="color:#71717a;font-size:.82rem;margin-top:8px;line-height:1.4;">'
+                f'Se hai aggiunto nuove Pagine FB o nuovi IG Business al TUO profilo Meta, '
+                f'ricolleghi qui per aggiornare la lista.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.warning("OAuth non configurato")
+    with mc2:
+        if st.button("🔑 Configura/aggiungi account",
+                     key="manage_keys_from_step5",
+                     use_container_width=True):
+            st.session_state.view = "api_keys"
+            st.rerun()
+        st.markdown(
+            '<div style="color:#71717a;font-size:.82rem;margin-top:8px;line-height:1.4;">'
+            'Per aggiungere account sotto un <b>profilo Meta diverso</b> '
+            '(es. agenzia con clienti separati), apri la pagina API Keys.</div>',
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+
     # Save derived enabled_platforms (compat with existing pipeline) + selected_pages
     has_ig_selected = any(
         p["page_id"] in selected_page_ids and p.get("instagram_business_account_id")
@@ -2592,8 +2642,6 @@ elif st.session_state.step == 5:
     if has_fb_selected:
         new_enabled.append("facebook")
     publisher_cfg["enabled_platforms"] = new_enabled
-
-    st.divider()
 
     # ── Caption template ──
     st.markdown(
