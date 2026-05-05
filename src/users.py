@@ -4,14 +4,33 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import secrets
 from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-USERS_FILE = PROJECT_ROOT / "config" / "users.json"
-USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+# DATA_DIR points to a persistent location for user accounts and per-user
+# settings. On Railway this maps to a mounted Volume (/app/data). On dev or
+# unconfigured environments it falls back to the in-repo config/ dir, which
+# is fine for local but ephemeral on Railway containers.
+_DATA_DIR_ENV = os.getenv("DATA_DIR", "").strip()
+DATA_DIR = Path(_DATA_DIR_ENV) if _DATA_DIR_ENV else (PROJECT_ROOT / "config")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+USERS_FILE = DATA_DIR / "users.json"
+
+# One-time migration: if a legacy users.json lives in the in-repo config/ but
+# the new data dir is empty, copy it over so we don't lose accounts the first
+# time the volume mount comes online.
+_LEGACY_USERS = PROJECT_ROOT / "config" / "users.json"
+if _LEGACY_USERS != USERS_FILE and _LEGACY_USERS.exists() and not USERS_FILE.exists():
+    try:
+        USERS_FILE.write_text(_LEGACY_USERS.read_text(encoding="utf-8"), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _hash_password(password: str) -> str:
@@ -154,10 +173,17 @@ def change_password(email: str, new_password: str) -> bool:
 
 
 def get_user_settings_path(email: str) -> Path:
-    """Per-user settings YAML file path."""
+    """Per-user settings YAML file path. Persisted under DATA_DIR/users/."""
     safe = _safe_email(email)
-    p = PROJECT_ROOT / "config" / "users" / f"{safe}.yaml"
+    p = DATA_DIR / "users" / f"{safe}.yaml"
     p.parent.mkdir(parents=True, exist_ok=True)
+    # One-time migration from legacy location
+    legacy = PROJECT_ROOT / "config" / "users" / f"{safe}.yaml"
+    if legacy != p and legacy.exists() and not p.exists():
+        try:
+            p.write_text(legacy.read_text(encoding="utf-8"), encoding="utf-8")
+        except Exception:
+            pass
     return p
 
 
