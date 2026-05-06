@@ -1237,12 +1237,11 @@ def run_pipeline_background(dry_run: bool):
                 "instagram_business_account_id": u_keys.get("instagram_business_account_id", ""),
                 "instagram_username": u_keys.get("instagram_username", ""),
             }]
-        # Filter to selected
+        # Filter to selected — no auto-default to ALL. Step 5 saves an explicit
+        # selection on every "Pubblica qui" / "Tutti" / "Nessuno" click; if the
+        # user has emptied the list, that's intentional and we publish to none.
         sel_ids = set(settings.get("publisher", {}).get("selected_pages", []))
         targets = [p for p in meta_pages if p["page_id"] in sel_ids]
-        # If user hasn't picked anything but has accounts, default to ALL
-        if not targets and meta_pages and not sel_ids:
-            targets = meta_pages
         os.environ["META_PUBLISH_TARGETS"] = _json.dumps(targets)
     else:
         os.environ.pop("META_PUBLISH_TARGETS", None)
@@ -2537,6 +2536,12 @@ elif st.session_state.step == 5:
                 unsafe_allow_html=True,
             )
 
+        # When two pages share the same name (e.g. user has multiple "Veryra"
+        # FB pages), we tag each with the last 4 chars of the page_id so the
+        # user can tell which is which before clicking "Pubblica qui".
+        from collections import Counter as _Counter
+        _name_counts = _Counter((p.get("page_name") or "").strip() for p in meta_pages)
+
         # Per-page cards
         cols_per_row = 4
         for row_start in range(0, len(meta_pages), cols_per_row):
@@ -2559,7 +2564,12 @@ elif st.session_state.step == 5:
                         f'</div>'
                     )
 
-                    fb_label = page.get("page_name") or page["page_id"]
+                    _name = page.get("page_name") or page["page_id"]
+                    fb_label = (
+                        f'{_name} <span style="opacity:.55;font-size:.78em;">·{pid[-4:]}</span>'
+                        if _name_counts[(page.get("page_name") or "").strip()] > 1
+                        else _name
+                    )
                     ig_label = (
                         f'<div class="pwr-acct-ig-label">@{page["instagram_username"] or "ig"}</div>'
                         if has_ig else
@@ -2608,32 +2618,33 @@ elif st.session_state.step == 5:
     mc1, mc2 = st.columns(2)
     with mc1:
         if oauth_url:
+            # Plain text inside the styled <a> — no nested icon div, which was
+            # rendering as an extra blue block inside the flex container.
             st.markdown(
                 f'<a href="{oauth_url}" target="_blank" '
-                f'style="display:flex;align-items:center;justify-content:center;gap:10px;'
+                f'style="display:block;text-align:center;'
                 f'padding:14px;background:#1877f2;color:white !important;'
                 f'border-radius:10px;text-decoration:none;font-weight:600;'
                 f'box-shadow:0 8px 22px -8px rgba(24,119,242,.5);">'
-                f'{_social_icon("facebook", 28)}'
-                f'<span>🔄 Riconnetti / aggiungi pagine al tuo Facebook</span>'
+                f'🔄 Aggiorna pagine Facebook'
                 f'</a>'
                 f'<div style="color:#71717a;font-size:.82rem;margin-top:8px;line-height:1.4;">'
-                f'Se hai aggiunto nuove Pagine FB o nuovi IG Business al TUO profilo Meta, '
-                f'ricolleghi qui per aggiornare la lista.</div>',
+                f'Hai collegato nuove pagine FB o IG Business al tuo profilo Meta? '
+                f'Aggiorna la lista qui.</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.warning("OAuth non configurato")
     with mc2:
-        if st.button("🔑 Configura/aggiungi account",
+        if st.button("🔑 Aggiungi profilo Meta diverso",
                      key="manage_keys_from_step5",
                      use_container_width=True):
             st.session_state.view = "api_keys"
             st.rerun()
         st.markdown(
             '<div style="color:#71717a;font-size:.82rem;margin-top:8px;line-height:1.4;">'
-            'Per aggiungere account sotto un <b>profilo Meta diverso</b> '
-            '(es. agenzia con clienti separati), apri la pagina API Keys.</div>',
+            'Pubblichi su account di un\'<b>altra agenzia o cliente</b>? '
+            'Aggiungi un secondo profilo Meta dalla pagina API Keys.</div>',
             unsafe_allow_html=True,
         )
 
@@ -2750,6 +2761,8 @@ elif st.session_state.step == 6:
     selected_pages_ro = [p for p in pages_ro if p["page_id"] in selected_ids_ro]
 
     if selected_pages_ro:
+        from collections import Counter as _Counter
+        _name_counts_ro = _Counter((p.get("page_name") or "").strip() for p in selected_pages_ro)
         rows = []
         for p in selected_pages_ro:
             ig_chip = (
@@ -2758,13 +2771,19 @@ elif st.session_state.step == 6:
                 f'border-radius:999px;margin-left:8px;">@{p.get("instagram_username","ig")}</span>'
                 if p.get("instagram_business_account_id") else ""
             )
+            _name = p.get("page_name") or "?"
+            _name_html = (
+                f'{_name} <span style="opacity:.55;font-size:.85em;">·{p["page_id"][-4:]}</span>'
+                if _name_counts_ro[(p.get("page_name") or "").strip()] > 1
+                else _name
+            )
             rows.append(
                 f'<div style="display:flex;align-items:center;gap:12px;padding:8px 0;">'
                 f'<div style="width:28px;height:28px;background:#1877f2;color:white;'
                 f'font-weight:800;font-size:.95rem;font-family:Georgia,serif;'
                 f'border-radius:6px;display:inline-flex;align-items:center;justify-content:center;'
                 f'flex-shrink:0;">f</div>'
-                f'<span style="color:#fafafa;font-weight:600;">{p.get("page_name","?")}</span>'
+                f'<span style="color:#fafafa;font-weight:600;">{_name_html}</span>'
                 f'{ig_chip}</div>'
             )
         st.markdown(
