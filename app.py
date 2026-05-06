@@ -2262,9 +2262,15 @@ elif st.session_state.step == 3:
         if current_dur < 20:
             current_dur = 20
             settings["scriptwriter"]["target_duration_seconds"] = 20
-        settings["scriptwriter"]["target_duration_seconds"] = st.slider(
+        new_dur = st.slider(
             "Durata video (secondi)", 20, 90, current_dur,
         )
+        # Auto-save: senza questo l'utente deve cliccare "Salva" per persistere,
+        # e se naviga allo step 6 senza farlo, "Genera Script con Claude" rilegge
+        # YAML stantio e Claude lavora sulla durata vecchia.
+        settings["scriptwriter"]["target_duration_seconds"] = new_dur
+        if new_dur != current_dur:
+            save_settings(settings)
         # Live cost estimate (HEYGEN_USD_PER_CREDIT defined at top of file)
         _est = settings["scriptwriter"]["target_duration_seconds"] * HEYGEN_USD_PER_CREDIT
         st.caption(f"💰 Stima costo HeyGen API: **~${_est:.2f}/reel** ({settings['scriptwriter']['target_duration_seconds']}s × $1/min)")
