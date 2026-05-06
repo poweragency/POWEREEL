@@ -2191,7 +2191,7 @@ if st.session_state.view == "costs":
         - Avatar III in Studio è gratis, ma via API consuma sempre crediti
         - Per un reel di {target_duration}s: **${heygen_cost_per_video:.3f}**
 
-        **Claude API (claude-sonnet-4):**
+        **Claude API (claude-sonnet-4-6):**
         - Input: $3 per milione di token
         - Output: $15 per milione di token
         - Per script: ~800 input + 250 output token = **${CLAUDE_USD_PER_SCRIPT:.4f}**

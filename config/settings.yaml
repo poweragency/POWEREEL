@@ -17,7 +17,7 @@ scraper:
   max_articles_per_feed: 5
   max_total_articles: 10
 scriptwriter:
-  model: claude-sonnet-4-20250514
+  model: claude-sonnet-4-6
   max_tokens: 1024
   target_duration_seconds: 45
   language: it
