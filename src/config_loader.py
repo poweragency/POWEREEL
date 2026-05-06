@@ -44,8 +44,10 @@ class ScriptwriterConfig(BaseModel):
 
     @property
     def target_word_count(self) -> int:
-        """~130 Italian words per minute."""
-        return int(self.target_duration_seconds * 130 / 60)
+        # HeyGen Italian TTS averages ~80 wpm (was 130 — natural speech rate, but
+        # HeyGen avatars are slower and more deliberate). Misero il target a 130
+        # produceva script ~1.6× troppo lunghi: 20s richiesti → 45s effettivi.
+        return int(self.target_duration_seconds * 80 / 60)
 
 
 class HeyGenConfig(BaseModel):

@@ -86,31 +86,64 @@ def generate_script(
     # Build user prompt
     news_block = _build_news_block(articles)
     user_prompt = (
-        f"Ecco le notizie di oggi su finanza e crypto. "
-        f"Scrivi uno script di circa {word_count} parole per un reel di {duration} secondi.\n\n"
+        f"Ecco le notizie di oggi su finanza e crypto.\n\n"
+        f"Scrivi uno script per un reel di ESATTAMENTE {duration} secondi.\n"
+        f"VINCOLO RIGIDO: MASSIMO {word_count} parole. NON superare questo limite "
+        f"in nessun caso. Se non ci stai, taglia notizie o accorcia le frasi.\n"
+        f"Conta le parole prima di rispondere.\n\n"
         f"NOTIZIE:\n{news_block}"
     )
 
     script = _call_claude(client, system_prompt, user_prompt, config)
 
-    # Validate word count
+    # Validate word count — tolerance ridotta da 1.30 a 1.10 perché ogni parola
+    # in più si traduce direttamente in secondi extra di video HeyGen.
     actual_words = len(script.split())
     logger.info("Script generato: %d parole (target: %d)", actual_words, word_count)
 
-    if actual_words > word_count * 1.3:
+    if actual_words > word_count * 1.10:
         logger.warning(
-            "Script troppo lungo (%d parole), rigenero con vincolo più stretto",
-            actual_words,
+            "Script troppo lungo (%d parole, max %d), rigenero con vincolo più stretto",
+            actual_words, int(word_count * 1.10),
         )
         user_prompt += (
-            f"\n\nIMPORTANTE: lo script precedente era troppo lungo ({actual_words} parole). "
-            f"Riscrivi in massimo {word_count} parole. Sii più conciso."
+            f"\n\nIMPORTANTE: lo script precedente era troppo lungo ({actual_words} parole, "
+            f"limite {word_count}). Riscrivi in MASSIMO {word_count} parole. Sii drastico."
         )
         script = _call_claude(client, system_prompt, user_prompt, config)
         actual_words = len(script.split())
         logger.info("Script rigenerato: %d parole", actual_words)
 
+    # Safety net: se anche dopo rigenerazione è troppo lungo, taglia all'ultimo
+    # confine di frase entro il limite. Evita reel più lunghi del richiesto.
+    if actual_words > word_count * 1.10:
+        script = _truncate_to_word_limit(script, word_count)
+        final_words = len(script.split())
+        logger.warning(
+            "Script ancora troppo lungo dopo rigenerazione — troncato a %d parole",
+            final_words,
+        )
+
     return script
+
+
+def _truncate_to_word_limit(script: str, max_words: int) -> str:
+    """Trim script to the last sentence boundary that fits within max_words.
+
+    Falls back to a hard word-count cut if no sentence boundary is found.
+    """
+    words = script.split()
+    if len(words) <= max_words:
+        return script
+
+    candidate = " ".join(words[:max_words])
+    # Prefer cutting at the last full sentence (., !, ?)
+    for terminator in (". ", "! ", "? ", ".\n", "!\n", "?\n"):
+        idx = candidate.rfind(terminator)
+        if idx > 0:
+            return candidate[: idx + 1].strip()
+
+    return candidate.strip()
 
 
 def save_script(script: str, output_dir: Path) -> Path:
