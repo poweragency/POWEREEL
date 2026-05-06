@@ -650,6 +650,113 @@ def _apply_user_api_keys(user: dict) -> None:
             os.environ[env_name] = keys[k]
 
 
+# ── Persistent auth via signed cookie ───────────────────────────────────────
+# Streamlit's session_state lives in server memory and dies on every container
+# restart (which Railway does on each deploy). Without this, users have to
+# log in again after every deploy / browser refresh / long idle. Solution:
+# HMAC-signed cookie containing the user email + expiry; verified on each
+# script run. No new dependency — uses st.context (Streamlit ≥1.34) and
+# JavaScript injected via st.html for the set side.
+
+import hmac as _hmac
+import hashlib as _hashlib
+
+_AUTH_COOKIE_NAME = "powereel_auth"
+_AUTH_COOKIE_TTL_SECONDS = 7 * 24 * 3600  # 7 days
+
+
+def _auth_cookie_secret() -> bytes:
+    """Server-side secret used to sign auth cookies.
+
+    Uses APP_PASSWORD (already set per-deployment) as the source of entropy.
+    Means: rotating APP_PASSWORD invalidates all existing sessions, which is
+    the correct behaviour.
+    """
+    return os.getenv("APP_PASSWORD", "powereel-default-secret-2026").encode()
+
+
+def _sign_auth(email: str) -> str:
+    """Return a signed token: '{email}|{exp_ts}|{sig}'."""
+    exp = int(time.time()) + _AUTH_COOKIE_TTL_SECONDS
+    payload = f"{email}|{exp}"
+    sig = _hmac.new(
+        _auth_cookie_secret(), payload.encode(), _hashlib.sha256,
+    ).hexdigest()
+    return f"{payload}|{sig}"
+
+
+def _verify_auth(token: str) -> str | None:
+    """Verify a signed token. Returns the email if valid+unexpired, else None."""
+    if not token or token.count("|") != 2:
+        return None
+    try:
+        email, exp_str, sig = token.rsplit("|", 2)
+        exp = int(exp_str)
+    except Exception:
+        return None
+    if exp < time.time():
+        return None
+    expected = _hmac.new(
+        _auth_cookie_secret(), f"{email}|{exp}".encode(), _hashlib.sha256,
+    ).hexdigest()
+    if not _hmac.compare_digest(expected, sig):
+        return None
+    return email
+
+
+def _read_auth_cookie() -> str | None:
+    """Read the auth cookie from the incoming request headers."""
+    try:
+        cookies_header = st.context.headers.get("cookie", "") or ""
+    except Exception:
+        return None
+    for part in cookies_header.split(";"):
+        part = part.strip()
+        if part.startswith(f"{_AUTH_COOKIE_NAME}="):
+            return part[len(_AUTH_COOKIE_NAME) + 1:]
+    return None
+
+
+def _write_auth_cookie(email: str) -> None:
+    """Set the auth cookie via injected JavaScript."""
+    token = _sign_auth(email)
+    # SameSite=Lax so OAuth popup tabs returning to /app still see the cookie.
+    js = (
+        f'<script>document.cookie = "{_AUTH_COOKIE_NAME}={token}; '
+        f'path=/; max-age={_AUTH_COOKIE_TTL_SECONDS}; SameSite=Lax";</script>'
+    )
+    st.html(js)
+
+
+def _clear_auth_cookie() -> None:
+    """Clear the auth cookie."""
+    js = (
+        f'<script>document.cookie = "{_AUTH_COOKIE_NAME}=; '
+        f'path=/; max-age=0; SameSite=Lax";</script>'
+    )
+    st.html(js)
+
+
+def _restore_session_from_cookie() -> bool:
+    """If a valid auth cookie exists, populate session_state and return True."""
+    if st.session_state.get("authenticated"):
+        return True
+    token = _read_auth_cookie()
+    if not token:
+        return False
+    email = _verify_auth(token)
+    if not email:
+        return False
+    user = _users.get_user(email)
+    if not user:
+        return False
+    st.session_state.authenticated = True
+    st.session_state.user_email = user["email"]
+    st.session_state.is_admin = user.get("is_admin", False)
+    _apply_user_api_keys(user)
+    return True
+
+
 # ── Social icon rendering helpers (Instagram + Facebook) ────────────────────
 
 _SOCIAL_SVG_FB_PATH = (
@@ -701,6 +808,11 @@ def show_landing_and_login() -> bool:
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     if st.session_state.authenticated:
+        return True
+    # Try cookie-based auto-restore before showing the login form. This lets
+    # users stay logged in across deploys, browser refreshes and OAuth popup
+    # round-trips.
+    if _restore_session_from_cookie():
         return True
 
     # ── Landing CSS (mirrors static/landing.html design tokens) ──
@@ -1014,6 +1126,9 @@ def show_landing_and_login() -> bool:
                     st.session_state.user_email = user["email"]
                     st.session_state.is_admin = user["is_admin"]
                     _apply_user_api_keys(user)
+                    # Persist auth in a signed cookie so the user stays
+                    # logged in across deploys / browser refresh / OAuth.
+                    _write_auth_cookie(user["email"])
                     st.rerun()
                 else:
                     st.error("❌ Email o password errati")
@@ -1042,6 +1157,8 @@ def logout():
                 "FACEBOOK_PAGE_ID", "FACEBOOK_PAGE_ACCESS_TOKEN"]:
         if key in os.environ:
             del os.environ[key]
+    # Drop the persistent auth cookie so the next page load won't auto-restore.
+    _clear_auth_cookie()
     st.rerun()
 
 
