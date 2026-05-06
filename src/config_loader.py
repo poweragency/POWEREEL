@@ -191,9 +191,20 @@ def load_config(
     env_path: Path | None = None,
     check_ffmpeg: bool = True,
 ) -> AppConfig:
-    """Load and validate the full application config."""
+    """Load and validate the full application config.
+
+    Resolution order for the settings file:
+      1. Explicit `config_path` argument.
+      2. ``USER_SETTINGS_FILE`` env var (set by app.py before running the
+         pipeline subprocess so each tenant uses their own settings).
+      3. Default global template at ``config/settings.yaml``.
+    """
     if config_path is None:
-        config_path = PROJECT_ROOT / "config" / "settings.yaml"
+        env_override = os.getenv("USER_SETTINGS_FILE", "").strip()
+        if env_override and Path(env_override).exists():
+            config_path = Path(env_override)
+        else:
+            config_path = PROJECT_ROOT / "config" / "settings.yaml"
     if env_path is None:
         env_path = PROJECT_ROOT / "config" / ".env"
 

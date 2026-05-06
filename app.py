@@ -1190,13 +1190,37 @@ def render_top_bar():
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+def _user_settings_path() -> Path | None:
+    """Path to the current tenant's per-user settings YAML, or None if no user."""
+    email = st.session_state.get("user_email")
+    if not email:
+        return None
+    return _users.get_user_settings_path(email)
+
+
 def load_settings() -> dict:
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    """Load settings for the currently logged-in tenant.
+
+    On first access (or if no user is logged in), falls back to the global
+    template at config/settings.yaml. Once the tenant saves anything, all
+    subsequent loads come from their own file under DATA_DIR/users/.
+    """
+    user_path = _user_settings_path()
+    target = user_path if (user_path and user_path.exists()) else CONFIG_PATH
+    with open(target, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
 def save_settings(s: dict) -> None:
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+    """Persist settings to the current tenant's file (or template if no user).
+
+    Each tenant gets their own YAML so news feeds, avatar config, caption,
+    pricing etc. are isolated per-customer.
+    """
+    user_path = _user_settings_path()
+    target = user_path if user_path else CONFIG_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "w", encoding="utf-8") as f:
         yaml.dump(s, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
@@ -1335,6 +1359,15 @@ def run_pipeline_background(dry_run: bool):
     if DONE_MARKER.exists():
         DONE_MARKER.unlink()
     RUN_MARKER.write_text(str(time.time()))
+
+    # Point the pipeline subprocess at this tenant's settings file. Without
+    # this, config_loader would fall back to the global template and ignore
+    # the tenant's own news feeds / script tone / avatar config.
+    user_settings = _user_settings_path()
+    if user_settings and user_settings.exists():
+        os.environ["USER_SETTINGS_FILE"] = str(user_settings)
+    else:
+        os.environ.pop("USER_SETTINGS_FILE", None)
 
     # Build the multi-account publish targets list and inject it into env
     # (subprocess inherits parent env). Pipeline reads META_PUBLISH_TARGETS
@@ -2797,10 +2830,48 @@ elif st.session_state.step == 5:
         st.success("Salvato")
 
     st.divider()
-    can_proceed = len(selected_page_ids) > 0
-    if not can_proceed:
-        st.warning("Seleziona almeno un account per proseguire")
-    nav_buttons(5, can_proceed)
+
+    # Custom nav: allow proceeding even with no accounts selected, but
+    # require an explicit confirmation dialog so the user is aware the reel
+    # won't be auto-published.
+    col_back_s5, _spacer_s5, col_next_s5 = st.columns([1, 3, 1])
+    with col_back_s5:
+        if st.button("← Indietro", use_container_width=True, key="back_step5"):
+            goto_step(4)
+            st.rerun()
+    with col_next_s5:
+        if st.button("Avanti →", type="primary", use_container_width=True, key="next_step5"):
+            if len(selected_page_ids) == 0:
+                # Trigger the confirmation dialog instead of advancing
+                st.session_state["_confirm_no_publish_s5"] = True
+                st.rerun()
+            else:
+                goto_step(6)
+                st.rerun()
+
+    if st.session_state.get("_confirm_no_publish_s5"):
+        @st.dialog("⚠️ Nessun account selezionato")
+        def _confirm_no_publish_dialog():
+            st.markdown(
+                "**Stai per andare avanti senza aver scelto nessuna pagina Facebook o Instagram.**"
+            )
+            st.markdown(
+                "Il reel verrà generato ma **non pubblicato automaticamente** — "
+                "resterà solo come file scaricabile dalla pagina di generazione (Step 6)."
+            )
+            st.markdown("Sei sicuro di voler procedere?")
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("← Torna a scegliere", use_container_width=True, key="dlg_back"):
+                    st.session_state["_confirm_no_publish_s5"] = False
+                    st.rerun()
+            with c2:
+                if st.button("Procedi senza pubblicare", type="primary",
+                             use_container_width=True, key="dlg_ok"):
+                    st.session_state["_confirm_no_publish_s5"] = False
+                    goto_step(6)
+                    st.rerun()
+        _confirm_no_publish_dialog()
 
 
 # ── STEP 6: Genera & Pubblica ────────────────────────────────────────────────
