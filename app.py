@@ -1321,8 +1321,12 @@ def _heygen_data():
 
 # ── Pricing constants (admin cost analysis) ─────────────────────────────────
 
-# HeyGen: ~$0.066 per API credit (1500 credits = $99/mo Business pack)
-HEYGEN_USD_PER_CREDIT = 0.066
+# HeyGen Avatar III via API: $1/minute (~$0.01667/second).
+# Confirmed by HeyGen support: Studio editor uses Avatar III for free, but
+# every API generation consumes credits regardless of engine. The earlier
+# value of $0.066/sec ($3.96/min) was based on the Studio Creator pack and
+# overstated API costs by ~4×.
+HEYGEN_USD_PER_CREDIT = 1.0 / 60.0  # $0.01667 per second (= $1/min)
 
 # Claude Sonnet 4: $3/M input, $15/M output. Avg ~800 in + 250 out per script.
 CLAUDE_USD_PER_SCRIPT = (800 * 3 / 1_000_000) + (250 * 15 / 1_000_000)  # ~$0.006
@@ -1945,7 +1949,7 @@ if st.session_state.view == "costs":
     # ── Cost per video ──
     st.subheader("📹 Costo per video")
 
-    heygen_credits_per_video = target_duration  # ~1 credit/sec
+    heygen_credits_per_video = target_duration  # 1 sec di video = 1 unità di costo
     heygen_cost_per_video = heygen_credits_per_video * HEYGEN_USD_PER_CREDIT
     total_per_video = heygen_cost_per_video + CLAUDE_USD_PER_SCRIPT
 
@@ -1954,7 +1958,7 @@ if st.session_state.view == "costs":
         st.metric(
             "HeyGen (avatar)",
             f"${heygen_cost_per_video:.3f}",
-            f"{heygen_credits_per_video} crediti × ${HEYGEN_USD_PER_CREDIT:.3f}",
+            f"{target_duration}s × $1/min",
         )
     with c2:
         st.metric(
@@ -2033,11 +2037,10 @@ if st.session_state.view == "costs":
     # ── Pricing breakdown ──
     with st.expander("📖 Dettagli prezzi"):
         st.markdown(f"""
-        **HeyGen API:**
-        - Pacchetto crediti: ~$99 per 1500 crediti
-        - Costo per credito: **${HEYGEN_USD_PER_CREDIT:.4f}**
-        - Consumo: ~1 credito per secondo di video
-        - Per un reel di {target_duration}s: **{heygen_credits_per_video} crediti = ${heygen_cost_per_video:.3f}**
+        **HeyGen API (Avatar III):**
+        - Tariffa API: **$1/minuto** (~${HEYGEN_USD_PER_CREDIT:.4f}/secondo)
+        - Avatar III in Studio è gratis, ma via API consuma sempre crediti
+        - Per un reel di {target_duration}s: **${heygen_cost_per_video:.3f}**
 
         **Claude API (claude-sonnet-4):**
         - Input: $3 per milione di token
@@ -2264,7 +2267,7 @@ elif st.session_state.step == 3:
         )
         # Live cost estimate (HEYGEN_USD_PER_CREDIT defined at top of file)
         _est = settings["scriptwriter"]["target_duration_seconds"] * HEYGEN_USD_PER_CREDIT
-        st.caption(f"💰 Stima costo HeyGen API: **~${_est:.2f}/reel** ({settings['scriptwriter']['target_duration_seconds']} crediti)")
+        st.caption(f"💰 Stima costo HeyGen API: **~${_est:.2f}/reel** ({settings['scriptwriter']['target_duration_seconds']}s × $1/min)")
     with col2:
         settings["scriptwriter"]["tone"] = st.text_input(
             "Tono", settings["scriptwriter"]["tone"],
@@ -2696,7 +2699,7 @@ elif st.session_state.step == 6:
             f'<h4 style="margin:0;">🤖 Pieno Automatico (API)</h4>'
             f'<p style="margin:4px 0; font-size:13px; color:#aaa;">'
             f'Tutto in 1 click. POWEREEL chiama HeyGen API. '
-            f'<b>Costo: ~${_api_cost:.2f}/reel</b> ({_dur}s × $0.066/credito)'
+            f'<b>Costo: ~${_api_cost:.2f}/reel</b> ({_dur}s × $1/min)'
             f'</p></div>',
             unsafe_allow_html=True,
         )
