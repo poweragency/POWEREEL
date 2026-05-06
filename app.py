@@ -3247,6 +3247,24 @@ elif st.session_state.step == 6:
         col_l, col_v, col_r = st.columns([1, 1, 2])
         with col_v:
             st.video(str(final_path))
+            # Download-now button right under the preview, so the user can
+            # grab the file without publishing on socials.
+            try:
+                with open(final_path, "rb") as _vf:
+                    _video_bytes = _vf.read()
+                _filename = f"powereel-{today}.mp4"
+                st.download_button(
+                    label="⬇️ Scarica ora",
+                    data=_video_bytes,
+                    file_name=_filename,
+                    mime="video/mp4",
+                    type="secondary",
+                    use_container_width=True,
+                    key="dl_final_inline",
+                    help=f"Scarica il file MP4 ({final_path.stat().st_size / 1_048_576:.1f} MB)",
+                )
+            except Exception as _e:
+                st.caption(f"⚠️ Download non disponibile: {_e}")
 
         st.divider()
         st.subheader("📤 Pubblicazione")

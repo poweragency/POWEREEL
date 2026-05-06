@@ -152,7 +152,7 @@ def _render_subtitle_nicktrading(
     highlight_style: str = "box",  # "box", "color", or "none"
     uppercase: bool = True,
     emoji: str = "",
-    max_line_width: int = 900,
+    max_line_width: int = 820,
 ) -> np.ndarray:
     """Render subtitle with configurable style: box highlight, color highlight, or no highlight.
     Optional emoji rendered above the text."""
@@ -306,7 +306,10 @@ def _create_subtitle_clips(
     spoken word with the highlight moving to that word in perfect sync.
     """
     sub_config = config.subtitle
-    phrase_size = max(4, sub_config.words_per_subtitle * 2)  # phrase length
+    # Phrase length = exactly the words_per_subtitle setting. The earlier
+    # `*2` doubled the on-screen word count, which made even short Italian
+    # phrases overflow at font_size 90 and got clipped by the video edges.
+    phrase_size = max(2, sub_config.words_per_subtitle)
 
     # Get word-level timestamps from audio
     timed_words = _transcribe_with_timestamps(audio_path, language="it")

@@ -68,7 +68,7 @@ PRESETS = {
         "description": "Box rosso sulla parola chiave, font Bebas Neue grande",
         "settings": {
             "font_path": "./assets/fonts/BebasNeue-Regular.ttf",
-            "font_size": 90,
+            "font_size": 72,
             "font_color": "#FFFFFF",
             "accent_color": "#E8163C",
             "stroke_color": "#000000",
@@ -84,7 +84,7 @@ PRESETS = {
         "description": "Stile Classic + emoji contestuale sopra ogni frase",
         "settings": {
             "font_path": "./assets/fonts/BebasNeue-Regular.ttf",
-            "font_size": 90,
+            "font_size": 72,
             "font_color": "#FFFFFF",
             "accent_color": "#E8163C",
             "stroke_color": "#000000",

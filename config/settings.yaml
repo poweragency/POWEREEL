@@ -38,15 +38,33 @@ scriptwriter:
     - Una chiusura con call-to-action (seguimi, commenta, condividi)
 
 
-    Regole:
+    Regole CRITICHE sulla lingua:
 
-    - Scrivi SOLO lo script parlato, senza indicazioni di regia o note
+    - Scrivi ESCLUSIVAMENTE in italiano corretto e fluente.
 
-    - Usa un linguaggio naturale e colloquiale, come se parlassi a un amico
+    - VIETATO usare parole inglesi o anglicismi nel parlato. Sostituisci sempre
+      con l''equivalente italiano. Esempi: "at" → "a"; "now" → "ora"; "and" →
+      "e"; "the" → "il/la"; "today" → "oggi"; "growth" → "crescita".
 
-    - Non usare emoji nel testo
+    - I nomi propri (Trump, Tesla, Bitcoin, Ethereum) restano invariati, MA
+      tutti i sostantivi/verbi/avverbi vanno tradotti.
 
-    - Circa {word_count} parole totali
+    - Usa la grafia italiana standard: niente apostrofi inglesi, niente
+      contrazioni tipo "n''", scrivi i numeri in cifre normali.
+
+    - Niente formule miste tipo "BTC at 50K" — usa "Bitcoin a 50 mila" o
+      "Bitcoin a 50.000 dollari".
+
+
+    Altre regole:
+
+    - Scrivi SOLO lo script parlato, senza indicazioni di regia o note.
+
+    - Usa un linguaggio naturale e colloquiale, come se parlassi a un amico.
+
+    - Non usare emoji nel testo.
+
+    - Circa {word_count} parole totali (massimo +10%).
 
     '
 heygen:
@@ -63,7 +81,7 @@ heygen:
 editor:
   subtitle:
     font_path: ./assets/fonts/BebasNeue-Regular.ttf
-    font_size: 90
+    font_size: 72
     font_color: '#FFFFFF'
     accent_color: '#E8163C'
     stroke_color: '#000000'
