@@ -298,12 +298,18 @@ def _create_subtitle_clips(
     video_duration: float,
     video_size: tuple[int, int],
     config: EditorConfig,
+    script: str | None = None,
 ) -> list[ImageClip]:
     """Karaoke-style: phrase stays on screen, red highlight moves word-by-word.
 
     Words are grouped into phrases (~6 words). Each phrase stays displayed
     for its full duration. Within each phrase, a frame is rendered for every
     spoken word with the highlight moving to that word in perfect sync.
+
+    When ``script`` is provided, Whisper is used ONLY for the per-word
+    timings — the displayed text is replaced positionally with the original
+    Claude-generated script. This avoids Whisper hallucinations turning
+    Italian words into nonsense ('alle 8' → 'AT 8' etc).
     """
     sub_config = config.subtitle
     # Phrase length = exactly the words_per_subtitle setting. The earlier
@@ -317,6 +323,44 @@ def _create_subtitle_clips(
     if not timed_words:
         logger.warning("Nessuna parola trascritta — sottotitoli saltati")
         return []
+
+    # Realign subtitle text to the original script if available. Whisper's
+    # transcription occasionally misreads Italian (apostrophes, numbers,
+    # crypto jargon) and the user complained about garbled subtitle text.
+    # The script is the source of truth for what the avatar said; Whisper
+    # only contributes the start/end timestamps.
+    if script:
+        script_words = [w for w in script.split() if w.strip()]
+        if script_words:
+            aligned = []
+            n_w = len(timed_words)
+            n_s = len(script_words)
+            for i, sw in enumerate(script_words):
+                if i < n_w:
+                    tw = timed_words[i]
+                    aligned.append({
+                        "start": tw["start"],
+                        "end": tw["end"],
+                        "text": sw,
+                    })
+                else:
+                    # Script has more words than Whisper found — pad at the
+                    # tail by extending from the last known end.
+                    last_end = aligned[-1]["end"] if aligned else 0.0
+                    extra_idx = i - (n_w - 1)
+                    aligned.append({
+                        "start": last_end + 0.05 * extra_idx,
+                        "end": last_end + 0.05 * extra_idx + 0.35,
+                        "text": sw,
+                    })
+            # If Whisper found MORE words than the script (e.g. avatar inserted
+            # filler 'eh', 'mmh'), drop the extras — better to undershoot than
+            # show transcription noise.
+            timed_words = aligned
+            logger.info(
+                "Subtitle text realigned to script (whisper=%d words, script=%d words)",
+                n_w, n_s,
+            )
 
     n = len(timed_words)
     clips = []
@@ -520,7 +564,7 @@ def edit_video(
     # selezionati dalla dashboard, quindi il video HeyGen e' gia' a schermo pieno.
 
     subtitle_clips = _create_subtitle_clips(
-        avatar_video_path, base.duration, tuple(base.size), config
+        avatar_video_path, base.duration, tuple(base.size), config, script=script,
     )
 
     lower_third = _add_lower_third(config, base.duration)
