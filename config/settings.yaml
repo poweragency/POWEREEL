@@ -60,6 +60,10 @@ scriptwriter:
 
     - Scrivi SOLO lo script parlato, senza indicazioni di regia o note.
 
+    - VIETATO scrivere conteggi parole, etichette tipo "Tot:", "Parole:",
+      "(N parole conteggiate)", o preamboli tipo "Ecco lo script:". Tutto
+      ciò che metti in output verrà letto a voce dall''avatar.
+
     - Usa un linguaggio naturale e colloquiale, come se parlassi a un amico.
 
     - Non usare emoji nel testo.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import anthropic
@@ -12,6 +13,46 @@ from .config_loader import ScriptwriterConfig
 from .scraper import Article
 
 logger = logging.getLogger(__name__)
+
+
+# Meta-text patterns Claude tends to leak into scripts even when told not to.
+# When the script gets fed to HeyGen TTS, the avatar reads these out loud
+# (e.g. user heard "...15 parole conteggiate..." in a generated reel).
+# Inline pattern: parenthetical / bracketed mention of "N parole".
+_META_INLINE = re.compile(
+    r"\s*[\[\(]\s*\d+\s+parole[^\]\)]*[\]\)]\s*",
+    re.IGNORECASE,
+)
+# Standalone meta lines: word counts, prefaces ("Ecco lo script:"), stage notes.
+_META_LINE_PATTERNS = [
+    re.compile(r"^\s*\(?\s*\d+\s+parole\b.*$", re.IGNORECASE),
+    re.compile(r"^\s*\[?\s*\d+\s+parole\b.*$", re.IGNORECASE),
+    re.compile(r"^\s*(tot(?:ale)?|conteggio|word\s*count|parole)\s*[:\-=]", re.IGNORECASE),
+    re.compile(r"^\s*(ecco|here(?:'|’)s)\s+(lo\s+)?(script|reel)\b.*$", re.IGNORECASE),
+    re.compile(r"^\s*script\s*[:\-]", re.IGNORECASE),
+    re.compile(r"^\s*\[.*\]\s*$"),     # whole-line stage direction in []
+    re.compile(r"^\s*\(.*parole.*\)\s*$", re.IGNORECASE),
+]
+
+
+def _strip_meta(script: str) -> str:
+    """Remove word-count notes, stage directions, and prefaces.
+
+    HeyGen reads the script verbatim, so any chrome Claude leaks (e.g.
+    '(15 parole conteggiate)' or 'Ecco lo script:') ends up spoken aloud
+    by the avatar. This is the safety net behind the prompt rules.
+    """
+    cleaned = _META_INLINE.sub(" ", script)
+    kept_lines = []
+    for line in cleaned.splitlines():
+        if any(p.search(line) for p in _META_LINE_PATTERNS):
+            logger.info("Riga meta rimossa dallo script: %r", line.strip())
+            continue
+        kept_lines.append(line)
+    out = "\n".join(kept_lines).strip()
+    # Collapse 3+ blank lines that the strip can leave behind
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out
 
 
 def _build_news_block(articles: list[Article]) -> str:
@@ -90,11 +131,14 @@ def generate_script(
         f"Scrivi uno script per un reel di ESATTAMENTE {duration} secondi.\n"
         f"VINCOLO RIGIDO: MASSIMO {word_count} parole. NON superare questo limite "
         f"in nessun caso. Se non ci stai, taglia notizie o accorcia le frasi.\n"
-        f"Conta le parole prima di rispondere.\n\n"
+        f"Conta le parole internamente, MA rispondi SOLO con il testo parlato — "
+        f"niente conteggi, niente preamboli tipo 'Ecco lo script', niente note "
+        f"tra parentesi quadre o tonde, niente etichette tipo 'Tot:'. Tutto ciò "
+        f"che scrivi verrà letto a voce dall'avatar.\n\n"
         f"NOTIZIE:\n{news_block}"
     )
 
-    script = _call_claude(client, system_prompt, user_prompt, config)
+    script = _strip_meta(_call_claude(client, system_prompt, user_prompt, config))
 
     # Validate word count — tolerance ridotta da 1.30 a 1.10 perché ogni parola
     # in più si traduce direttamente in secondi extra di video HeyGen.
@@ -110,7 +154,7 @@ def generate_script(
             f"\n\nIMPORTANTE: lo script precedente era troppo lungo ({actual_words} parole, "
             f"limite {word_count}). Riscrivi in MASSIMO {word_count} parole. Sii drastico."
         )
-        script = _call_claude(client, system_prompt, user_prompt, config)
+        script = _strip_meta(_call_claude(client, system_prompt, user_prompt, config))
         actual_words = len(script.split())
         logger.info("Script rigenerato: %d parole", actual_words)
 

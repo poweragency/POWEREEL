@@ -77,6 +77,10 @@ class SubtitleConfig(BaseModel):
     add_emoji: bool = False
     highlight_style: str = "box"  # "box", "color", or "none"
     preset: str = "classic"
+    # Vertical placement of the subtitle block on the 9:16 frame.
+    # 0.0 = top edge, 1.0 = bottom edge. 0.58 keeps the legacy default
+    # (text sits just below center, like the Hormozi/nicktrading look).
+    vertical_position: float = 0.58
 
 
 class BackgroundMusicConfig(BaseModel):

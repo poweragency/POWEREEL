@@ -2213,6 +2213,80 @@ if st.session_state.view == "costs":
     st.stop()
 
 
+# ── Helpers used inside the wizard steps ────────────────────────────────────
+
+
+@st.cache_data(show_spinner=False, ttl=600, max_entries=64)
+def _build_subtitle_preview_png(
+    font_path: str,
+    font_size: int,
+    font_color: str,
+    accent_color: str,
+    stroke_color: str,
+    stroke_width: int,
+    words_per_subtitle: int,
+    uppercase: bool,
+    add_emoji: bool,
+    highlight_style: str,
+    vertical_position: float,
+) -> bytes:
+    """Render a small 9:16 mock frame with the configured subtitle style.
+
+    Drives the live preview in Step 4's "Personalizzazione avanzata" panel —
+    every slider change reruns Streamlit, calls this helper, and the cache
+    skips the PIL/pilmoji render when the inputs haven't changed.
+    Returns PNG bytes ready for st.image().
+    """
+    from PIL import Image, ImageDraw
+    import io as _io
+    from src.editor import _render_subtitle_nicktrading
+
+    # Sample phrase whose visible word count matches the slider — so users
+    # can actually see "Parole per frase" change the line breaks.
+    sample_words = ["BITCOIN", "VOLA", "OGGI", "A", "OTTANTA", "MILA"]
+    n = max(2, min(6, int(words_per_subtitle)))
+    text = " ".join(sample_words[:n])
+    sample_emoji = "🚀" if add_emoji else ""
+    hl_idx = max(range(n), key=lambda i: len(sample_words[i]))
+
+    arr = _render_subtitle_nicktrading(
+        text=text,
+        highlight_idx=hl_idx,
+        font_path=font_path,
+        font_size=int(font_size),
+        font_color=font_color,
+        accent_color=accent_color,
+        stroke_color=stroke_color,
+        stroke_width=int(stroke_width),
+        highlight_style=highlight_style,
+        uppercase=bool(uppercase),
+        emoji=sample_emoji,
+    )
+    sub_img = Image.fromarray(arr, mode="RGBA")
+
+    # Subtle dark gradient stand-in for the actual video frame.
+    frame_w, frame_h = 1080, 1920
+    bg = Image.new("RGB", (frame_w, frame_h), (22, 22, 30))
+    draw = ImageDraw.Draw(bg)
+    for y in range(0, frame_h, 6):
+        v = int(18 + 30 * (y / frame_h))
+        draw.line([(0, y), (frame_w, y)], fill=(v, v, v + 8))
+
+    # Match MoviePy's runtime placement: centered horizontally, top-of-clip
+    # anchored at vertical_position * height.
+    sub_x = (frame_w - sub_img.width) // 2
+    sub_y = int(float(vertical_position) * frame_h)
+    bg_rgba = bg.convert("RGBA")
+    bg_rgba.alpha_composite(sub_img, dest=(sub_x, max(0, sub_y)))
+
+    preview = bg_rgba.convert("RGB")
+    preview.thumbnail((360, 640), Image.LANCZOS)
+
+    buf = _io.BytesIO()
+    preview.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 # ── STEP 1: Avatar & Look ────────────────────────────────────────────────────
 
 if st.session_state.step == 1:
@@ -2575,11 +2649,25 @@ elif st.session_state.step == 4:
             )
             sub["font_path"] = font_options[chosen_font]
 
-            c1, c2 = st.columns(2)
+            # Three columns: two for controls, one for the live preview.
+            # The preview re-renders on every slider change (via @cache_data
+            # on _build_subtitle_preview_png), so users see exactly where
+            # the text lands and how big it is.
+            c1, c2, c_preview = st.columns([1, 1, 1])
             with c1:
                 sub["font_size"] = st.slider("Dimensione testo", 30, 130, sub.get("font_size", 90))
                 sub["words_per_subtitle"] = st.slider("Parole per frase", 2, 6, sub.get("words_per_subtitle", 3))
                 sub["stroke_width"] = st.slider("Spessore bordo", 1, 10, sub.get("stroke_width", 5))
+                # Vertical placement (0.0=top, 1.0=bottom). 0.58 is the legacy
+                # "just below center" default; users frequently want it more
+                # central (~0.45) or pushed lower for safe-area on Reels.
+                sub["vertical_position"] = st.slider(
+                    "Posizione verticale testo",
+                    min_value=0.20, max_value=0.85,
+                    value=float(sub.get("vertical_position", 0.58)),
+                    step=0.01,
+                    help="0.20 = alto · 0.50 = centro perfetto · 0.85 = basso. Il default 0.58 lo tiene appena sotto il centro.",
+                )
                 sub["uppercase"] = st.toggle("TUTTO MAIUSCOLO", sub.get("uppercase", True))
                 sub["add_emoji"] = st.toggle("Aggiungi emoji contestuale", sub.get("add_emoji", False))
             with c2:
@@ -2601,6 +2689,35 @@ elif st.session_state.step == 4:
                     index=list(hl_options.keys()).index(current_hl),
                 )
                 sub["highlight_style"] = hl_options[chosen_hl]
+
+            with c_preview:
+                st.markdown(
+                    '<div style="font-size:.78rem;letter-spacing:.12em;'
+                    'text-transform:uppercase;color:#a78bfa;font-weight:700;'
+                    'margin-bottom:8px;">🔎 Anteprima live</div>',
+                    unsafe_allow_html=True,
+                )
+                try:
+                    _preview_png = _build_subtitle_preview_png(
+                        font_path=sub.get("font_path", "./assets/fonts/BebasNeue-Regular.ttf"),
+                        font_size=int(sub.get("font_size", 72)),
+                        font_color=sub.get("font_color", "#FFFFFF"),
+                        accent_color=sub.get("accent_color", "#E8163C"),
+                        stroke_color=sub.get("stroke_color", "#000000"),
+                        stroke_width=int(sub.get("stroke_width", 5)),
+                        words_per_subtitle=int(sub.get("words_per_subtitle", 3)),
+                        uppercase=bool(sub.get("uppercase", True)),
+                        add_emoji=bool(sub.get("add_emoji", False)),
+                        highlight_style=sub.get("highlight_style", "box"),
+                        vertical_position=float(sub.get("vertical_position", 0.58)),
+                    )
+                    st.image(
+                        _preview_png,
+                        caption="Mock 9:16 — il testo cambia mentre regoli i controlli",
+                        use_container_width=True,
+                    )
+                except Exception as _pe:
+                    st.caption(f"⚠️ Anteprima non disponibile: {_pe}")
 
             settings["editor"]["subtitle"] = sub
 
@@ -3189,6 +3306,17 @@ elif st.session_state.step == 6:
                 else:
                     if st.button("🎨 Avvia editing (sottotitoli + sync)",
                                  type="primary", use_container_width=True):
+                        # Point the editor subprocess at the tenant's settings.
+                        # Without this the loader falls back to the global
+                        # template, ignoring the subtitle preset just chosen
+                        # at Step 4 — the user always saw the same default
+                        # style regardless of which card they selected.
+                        _user_yaml = _user_settings_path()
+                        if _user_yaml and _user_yaml.exists():
+                            os.environ["USER_SETTINGS_FILE"] = str(_user_yaml)
+                        else:
+                            os.environ.pop("USER_SETTINGS_FILE", None)
+
                         # Run only editor stage on the uploaded video
                         def _editor_only():
                             log = PROJECT_ROOT / "logs" / "wizard_run.log"
@@ -3326,5 +3454,44 @@ elif st.session_state.step == 6:
                     "Il video viene pubblicato su tutte le piattaforme attive. "
                     "Se una fallisce, le altre continuano."
                 )
+
+        # ── Skip-publish exit: download-only users need a way out ──
+        # Without this the persistent step file keeps the tenant pinned to
+        # Step 6 forever, and goto_step(1) from the sidebar still finds the
+        # leftover final.mp4 and short-circuits. "Termina ora" wipes the
+        # current run_dir, clears the markers, and resets to Step 1.
+        st.divider()
+        col_end, col_end_help = st.columns([1, 2])
+        with col_end:
+            if st.button(
+                "✋ Termina ora",
+                type="secondary",
+                use_container_width=True,
+                key="end_now_step6",
+                help="Resetta tutto e torna al Passo 1 — usalo se hai scaricato il video e non vuoi pubblicarlo.",
+            ):
+                # Wipe today's run artefacts so the wizard sees a clean slate
+                for _f in (final_path, avatar_raw_path, script_path,
+                           run_dir / "articles.json"):
+                    try:
+                        if _f.exists():
+                            _f.unlink()
+                    except Exception:
+                        pass
+                # Clear run markers (in case a generation is still half-tracked)
+                for _m in (DONE_MARKER, RUN_MARKER):
+                    try:
+                        if _m.exists():
+                            _m.unlink()
+                    except Exception:
+                        pass
+                goto_step(1)
+                st.rerun()
+        with col_end_help:
+            st.caption(
+                "Hai scaricato il reel e non vuoi pubblicarlo? "
+                "Termina ora cancella la bozza corrente e ti riporta al "
+                "**Passo 1** per iniziare un nuovo reel da zero."
+            )
 
     nav_buttons(6, True, next_label="Fine")

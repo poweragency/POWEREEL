@@ -360,15 +360,27 @@ def _create_subtitle_clips(
                 emoji=phrase_emoji,
             )
 
-            clip = ImageClip(img_array, transparent=True)
-            clip = clip.with_start(word["start"])
-            # Duration = until next word starts (or end of phrase if last word)
+            # Duration = exactly until the next word starts. The previous
+            # `max(0.05, duration)` floor extended a clip past the next word's
+            # start whenever Whisper produced two words <50 ms apart, so two
+            # ImageClips were composited at once and the emoji rendered twice
+            # (visible ghosting + apparent video stutter at phrase boundaries
+            # when the emoji changed). Use the exact gap and skip clips with
+            # non-positive duration instead of clamping.
             if global_idx + 1 < n:
                 duration = timed_words[global_idx + 1]["start"] - word["start"]
             else:
                 duration = max(0.1, word["end"] - word["start"] + 0.2)
-            clip = clip.with_duration(max(0.05, duration))
-            clip = clip.with_position(("center", 0.58), relative=True)
+            if duration <= 0:
+                continue
+
+            clip = ImageClip(img_array, transparent=True)
+            clip = clip.with_start(word["start"])
+            clip = clip.with_duration(duration)
+            clip = clip.with_position(
+                ("center", getattr(sub_config, "vertical_position", 0.58)),
+                relative=True,
+            )
 
             clips.append(clip)
             total_renders += 1
