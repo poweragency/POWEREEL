@@ -2906,6 +2906,53 @@ elif st.session_state.step == 4:
     current_preset = settings["editor"]["subtitle"].get("preset", "classic")
     using_heygen = settings["heygen"].get("subtitle_source") == "heygen"
 
+    # ── Self-healing preview generation ──
+    # Each fresh container deploy starts with only the bundled PNGs in
+    # assets/templates/. Newly added presets won't have a preview yet.
+    # Lazily generate any missing preview here, once per visit.
+    _previews_dir = PROJECT_ROOT / "assets" / "templates"
+    _previews_dir.mkdir(parents=True, exist_ok=True)
+    _missing_previews = [
+        pid for pid in PRESETS.keys()
+        if not (_previews_dir / f"preset_{pid}.png").exists()
+    ]
+    if _missing_previews:
+        try:
+            with st.spinner(f"Genero anteprima per {len(_missing_previews)} preset…"):
+                from PIL import Image as _PILImage
+                from src.editor import _render_subtitle_nicktrading as _render_sub
+                for _pid in _missing_previews:
+                    _settings = PRESETS[_pid]["settings"]
+                    _sample = "Bitcoin esplode oltre" if _pid != "minimal" else "bitcoin esplode oltre"
+                    _emoji = "🚀" if _settings.get("add_emoji") else ""
+                    _arr = _render_sub(
+                        text=_sample, highlight_idx=0,
+                        font_path=_settings["font_path"],
+                        font_size=_settings["font_size"],
+                        font_color=_settings["font_color"],
+                        accent_color=_settings["accent_color"],
+                        stroke_color=_settings["stroke_color"],
+                        stroke_width=_settings["stroke_width"],
+                        highlight_style=_settings.get("highlight_style", "box"),
+                        uppercase=_settings.get("uppercase", True),
+                        emoji=_emoji,
+                        max_line_width=820,
+                    )
+                    _sub_img = _PILImage.fromarray(_arr)
+                    _sw, _sh = _sub_img.size
+                    _bg_w, _bg_h = 720, 480
+                    _bg = _PILImage.new("RGB", (_bg_w, _bg_h), (12, 16, 32))
+                    _scale = min(0.9 * _bg_w / _sw, 0.7 * _bg_h / _sh) if _sw and _sh else 1
+                    _new_w, _new_h = int(_sw * _scale), int(_sh * _scale)
+                    _resized = _sub_img.resize((_new_w, _new_h))
+                    _x = (_bg_w - _new_w) // 2
+                    _y = (_bg_h - _new_h) // 2 + 60
+                    _bg.paste(_resized, (_x, _y), _resized.split()[3] if _resized.mode == "RGBA" else None)
+                    _bg.save(_previews_dir / f"preset_{_pid}.png")
+        except Exception as _e:
+            # Non-fatal: cards just show "Preview non disponibile"
+            pass
+
     def _img_data_url(path):
         """Inline a local PNG as base64 data URL (so it renders inside the card markdown)."""
         try:
