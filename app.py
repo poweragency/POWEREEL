@@ -556,6 +556,343 @@ h2, h3, .stSubheader {
 st.markdown(_WIZARD_CSS, unsafe_allow_html=True)
 
 
+# ── Tech-neon theme override ────────────────────────────────────────────────
+# Sits AFTER all earlier CSS so it wins specificity wars. Goal: minimal
+# dark canvas, electric-cyan + violet accents, mono numerals, subtle glow on
+# the active state. Inspired by Linear / Vercel / Raycast aesthetics.
+_TECH_NEON_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300..900&family=Geist+Mono:wght@400..700&display=swap');
+
+:root, .stApp {
+    --pwr-bg:           #06080f;
+    --pwr-bg-elev:      #0c1020;
+    --pwr-surface:      rgba(255,255,255,.025);
+    --pwr-surface-2:    rgba(255,255,255,.05);
+    --pwr-border:       rgba(255,255,255,.06);
+    --pwr-border-hot:   rgba(0,240,255,.35);
+    --pwr-text:         #e7e9f0;
+    --pwr-muted:        #71717a;
+    --pwr-dim:          #4b5163;
+    --pwr-cyan:         #00f0ff;
+    --pwr-cyan-soft:    rgba(0,240,255,.18);
+    --pwr-violet:       #a855f7;
+    --pwr-mint:         #2af598;
+    --pwr-red:          #ff2357;
+    --pwr-glow-cyan:    0 0 18px rgba(0,240,255,.45),
+                        0 0 2px rgba(0,240,255,.7);
+    --pwr-glow-violet:  0 0 18px rgba(168,85,247,.45);
+}
+
+html, body, [class*="css"], .stApp {
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif !important;
+}
+
+.stApp {
+    background:
+      radial-gradient(ellipse 70% 40% at 80% 0%, rgba(168,85,247,.10), transparent 60%),
+      radial-gradient(ellipse 80% 50% at 0% 100%, rgba(0,240,255,.08), transparent 60%),
+      var(--pwr-bg) !important;
+    color: var(--pwr-text) !important;
+}
+
+/* Subtle dot grid overlay (pure CSS, no images) */
+.stApp::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(rgba(255,255,255,.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 0%, transparent 90%);
+    z-index: 0;
+}
+.main, .stApp > div, [data-testid="stMain"] { position: relative; z-index: 1; }
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background:
+      linear-gradient(180deg, rgba(0,240,255,.04) 0%, transparent 30%),
+      var(--pwr-bg-elev) !important;
+    border-right: 1px solid var(--pwr-border) !important;
+}
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+    padding-top: .8rem !important;
+}
+
+/* ── Logo ───────────────────────────────────────────────────── */
+.pwr-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 4px 14px;
+    border-bottom: 1px solid var(--pwr-border);
+    margin-bottom: 14px;
+}
+.pwr-logo-mark {
+    width: 32px; height: 32px; flex-shrink: 0;
+    border-radius: 8px;
+    background:
+      linear-gradient(135deg, var(--pwr-cyan) 0%, var(--pwr-violet) 100%);
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: var(--pwr-glow-cyan);
+    position: relative;
+    overflow: hidden;
+}
+.pwr-logo-mark::before {
+    content: "";
+    position: absolute; inset: 1px;
+    background: var(--pwr-bg);
+    border-radius: 7px;
+    z-index: 0;
+}
+.pwr-logo-mark::after {
+    content: "▶";
+    position: relative; z-index: 1;
+    font-size: 12px;
+    color: var(--pwr-cyan);
+    text-shadow: 0 0 10px var(--pwr-cyan);
+}
+.pwr-logo-text {
+    font-family: 'Geist Mono', ui-monospace, monospace !important;
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: .15em;
+    color: var(--pwr-text);
+}
+.pwr-logo-text .accent { color: var(--pwr-cyan); text-shadow: 0 0 8px rgba(0,240,255,.6); }
+
+/* User pill */
+.pwr-user-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--pwr-surface);
+    border: 1px solid var(--pwr-border);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--pwr-muted);
+    letter-spacing: .04em;
+    margin-bottom: 14px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pwr-user-pill .dot {
+    width: 6px; height: 6px;
+    background: var(--pwr-mint);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--pwr-mint);
+}
+
+/* Credits card */
+.pwr-credits {
+    background: var(--pwr-surface);
+    border: 1px solid var(--pwr-border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    position: relative;
+    overflow: hidden;
+}
+.pwr-credits::before {
+    content: "";
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 2px;
+    background: linear-gradient(180deg, var(--pwr-cyan), var(--pwr-violet));
+    box-shadow: 0 0 12px var(--pwr-cyan);
+}
+.pwr-credits-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--pwr-muted);
+    margin-bottom: 6px;
+}
+.pwr-credits-value {
+    font-family: 'Geist Mono', monospace;
+    font-weight: 700;
+    font-size: 1.6rem;
+    color: var(--pwr-cyan);
+    text-shadow: 0 0 14px rgba(0,240,255,.5);
+    line-height: 1;
+}
+.pwr-credits-sub {
+    font-size: 11px;
+    color: var(--pwr-muted);
+    margin-top: 6px;
+    font-family: 'Geist Mono', monospace;
+}
+
+/* Section header in sidebar */
+.pwr-side-h {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--pwr-muted);
+    margin: 18px 4px 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--pwr-border);
+}
+
+/* ── Step progress list (sidebar) ───────────────────────────── */
+.pwr-steps { display: flex; flex-direction: column; gap: 4px; }
+.pwr-step {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    transition: all .2s ease;
+}
+.pwr-step-num {
+    flex-shrink: 0;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--pwr-border);
+    color: var(--pwr-dim);
+    display: inline-flex; align-items: center; justify-content: center;
+    letter-spacing: .04em;
+}
+.pwr-step-name {
+    font-size: .92rem;
+    color: var(--pwr-muted);
+    font-weight: 500;
+    flex: 1;
+    line-height: 1.2;
+}
+.pwr-step.done .pwr-step-num {
+    background: rgba(42,245,152,.10);
+    border-color: rgba(42,245,152,.35);
+    color: var(--pwr-mint);
+}
+.pwr-step.done .pwr-step-name { color: var(--pwr-text); opacity: .75; }
+.pwr-step.active {
+    background: linear-gradient(90deg, rgba(0,240,255,.10), transparent 70%);
+    border-color: var(--pwr-border-hot);
+    box-shadow: var(--pwr-glow-cyan);
+}
+.pwr-step.active .pwr-step-num {
+    background: rgba(0,240,255,.15);
+    border-color: var(--pwr-cyan);
+    color: var(--pwr-cyan);
+    text-shadow: 0 0 8px rgba(0,240,255,.6);
+}
+.pwr-step.active .pwr-step-name { color: var(--pwr-text); font-weight: 600; }
+
+/* ── Buttons (Streamlit overrides, sidebar + main) ─────────── */
+.stButton > button, .stDownloadButton > button {
+    background: var(--pwr-surface) !important;
+    border: 1px solid var(--pwr-border) !important;
+    color: var(--pwr-text) !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    letter-spacing: .01em !important;
+    transition: all .15s ease !important;
+}
+.stButton > button:hover:not(:disabled),
+.stDownloadButton > button:hover:not(:disabled) {
+    border-color: var(--pwr-border-hot) !important;
+    background: rgba(0,240,255,.06) !important;
+    box-shadow: var(--pwr-glow-cyan) !important;
+    transform: translateY(-1px) !important;
+    color: var(--pwr-text) !important;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, var(--pwr-cyan) 0%, var(--pwr-violet) 100%) !important;
+    border: 0 !important;
+    color: var(--pwr-bg) !important;
+    font-weight: 700 !important;
+    text-shadow: none !important;
+    box-shadow: 0 0 24px rgba(0,240,255,.35), 0 4px 18px rgba(168,85,247,.3) !important;
+}
+.stButton > button[kind="primary"]:hover:not(:disabled) {
+    box-shadow: 0 0 32px rgba(0,240,255,.55), 0 6px 24px rgba(168,85,247,.45) !important;
+    transform: translateY(-2px) !important;
+}
+
+/* Subdued red accents — used for destructive / warnings only */
+.stAlert[kind="warning"] {
+    border-left: 3px solid var(--pwr-red) !important;
+}
+
+/* Headings: keep Geist but tint */
+h1, .pwr-h1 {
+    background: linear-gradient(135deg, #ffffff 0%, var(--pwr-cyan) 100%) !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    color: transparent !important;
+}
+
+/* Mono section labels */
+.pwr-section-label {
+    font-family: 'Geist Mono', monospace !important;
+    background: rgba(0,240,255,.08) !important;
+    border: 1px solid var(--pwr-border-hot) !important;
+    color: var(--pwr-cyan) !important;
+    text-shadow: 0 0 6px rgba(0,240,255,.4);
+}
+
+/* Wizard cards (.pwr-card from earlier CSS) — re-tint */
+.pwr-card {
+    background: var(--pwr-surface) !important;
+    border: 1px solid var(--pwr-border) !important;
+}
+.pwr-card:hover {
+    border-color: var(--pwr-border-hot) !important;
+    box-shadow: var(--pwr-glow-cyan) !important;
+}
+.pwr-card.selected {
+    border: 1px solid var(--pwr-cyan) !important;
+    box-shadow: var(--pwr-glow-cyan), 0 0 0 3px rgba(0,240,255,.08) !important;
+    background: linear-gradient(180deg, rgba(0,240,255,.06) 0%, var(--pwr-surface) 60%) !important;
+}
+.pwr-active-pill {
+    background: linear-gradient(135deg, var(--pwr-cyan) 0%, var(--pwr-mint) 100%) !important;
+    color: var(--pwr-bg) !important;
+    box-shadow: 0 0 14px rgba(0,240,255,.5) !important;
+    text-shadow: none !important;
+}
+
+/* Inputs / selectbox */
+.stTextInput input, .stTextArea textarea, .stSelectbox > div > div, .stNumberInput input {
+    background: var(--pwr-surface) !important;
+    border: 1px solid var(--pwr-border) !important;
+    color: var(--pwr-text) !important;
+    border-radius: 8px !important;
+}
+.stTextInput input:focus, .stTextArea textarea:focus {
+    border-color: var(--pwr-cyan) !important;
+    box-shadow: 0 0 0 3px rgba(0,240,255,.15) !important;
+    outline: none !important;
+}
+
+/* Slider thumb in cyan */
+.stSlider [data-baseweb="slider"] [role="slider"] {
+    background: var(--pwr-cyan) !important;
+    box-shadow: 0 0 10px rgba(0,240,255,.6) !important;
+}
+
+/* Dividers — thinner, less in-your-face */
+hr, [data-testid="stDivider"] {
+    border: 0 !important;
+    border-top: 1px solid var(--pwr-border) !important;
+    margin: 22px 0 !important;
+}
+</style>
+"""
+st.markdown(_TECH_NEON_CSS, unsafe_allow_html=True)
+
+
 PROJECT_ROOT = Path(__file__).parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
 ENV_PATH = PROJECT_ROOT / "config" / ".env"
@@ -1603,37 +1940,71 @@ render_top_bar()
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 
-st.sidebar.title("⚡ POWEREEL")
-st.sidebar.caption(f"👤 {st.session_state.get('user_email', 'guest')}")
+# Custom neon-tech logo + user pill
+st.sidebar.markdown(
+    '<div class="pwr-logo">'
+    '<div class="pwr-logo-mark"></div>'
+    '<div class="pwr-logo-text">POWER<span class="accent">REEL</span></div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
+_user_email = st.session_state.get('user_email', 'guest')
+st.sidebar.markdown(
+    f'<div class="pwr-user-pill"><span class="dot"></span>{_user_email}</div>',
+    unsafe_allow_html=True,
+)
 
 credits = get_heygen_credits()
 if credits >= 0:
-    st.sidebar.metric("Crediti HeyGen API", credits)
     remaining_value = credits * HEYGEN_USD_PER_CREDIT
-    st.sidebar.caption(f"≈ ${remaining_value:.2f} rimasti")
+    st.sidebar.markdown(
+        f'<div class="pwr-credits">'
+        f'  <div class="pwr-credits-label">⌬ Crediti HeyGen</div>'
+        f'  <div class="pwr-credits-value">{credits}</div>'
+        f'  <div class="pwr-credits-sub">≈ ${remaining_value:.2f} rimasti</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 elif credits == -1:
     st.sidebar.warning("⚠️ HeyGen API non configurata")
 
-st.sidebar.divider()
-
 # ── View switcher ──
 if st.session_state.view == "wizard":
-    st.sidebar.markdown("### Progresso")
+    st.sidebar.markdown(
+        '<div class="pwr-side-h">// Progresso</div>',
+        unsafe_allow_html=True,
+    )
+    _steps_html = ['<div class="pwr-steps">']
     for i, name in enumerate(STEPS, 1):
         if i < st.session_state.step:
-            st.sidebar.markdown(f"✅ {name}")
+            klass = "pwr-step done"
+            num_html = "✓"
         elif i == st.session_state.step:
-            st.sidebar.markdown(f"**🔵 {name}**")
+            klass = "pwr-step active"
+            num_html = f"{i:02d}"
         else:
-            st.sidebar.markdown(f"⚪ {name}")
+            klass = "pwr-step"
+            num_html = f"{i:02d}"
+        # Strip the leading number from STEPS strings like "1. Avatar e Look"
+        clean = name.split(". ", 1)[1] if ". " in name else name
+        _steps_html.append(
+            f'<div class="{klass}">'
+            f'<div class="pwr-step-num">{num_html}</div>'
+            f'<div class="pwr-step-name">{clean}</div>'
+            f'</div>'
+        )
+    _steps_html.append("</div>")
+    st.sidebar.markdown("\n".join(_steps_html), unsafe_allow_html=True)
 
-    st.sidebar.divider()
-    if st.sidebar.button("🔄 Ricomincia da Step 1"):
+    st.sidebar.markdown('<div style="height:14px;"></div>', unsafe_allow_html=True)
+    if st.sidebar.button("↻ Ricomincia da Step 1", use_container_width=True):
         goto_step(1)
         st.rerun()
 
-    st.sidebar.divider()
-    st.sidebar.markdown("### Account")
+    st.sidebar.markdown(
+        '<div class="pwr-side-h">// Account</div>',
+        unsafe_allow_html=True,
+    )
 
     if st.sidebar.button("🔑 Configura API Keys", use_container_width=True):
         st.session_state.view = "api_keys"
