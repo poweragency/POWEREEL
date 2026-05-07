@@ -246,13 +246,16 @@ _WIZARD_CSS = """
 }
 .pwr-card:hover .pwr-card-img img { transform: scale(1.05); }
 
-/* Wide variant — for video-frame previews (subtitle styles, HeyGen built-in) */
+/* Wide variant — for video-frame previews (subtitle styles, HeyGen built-in).
+ * 3:2 with object-fit:cover means the source PNG (also 3:2, 1200x800) fills
+ * the card exactly with no letterboxing, keeping subtitle text as large as
+ * the card allows. */
 .pwr-card-img.wide {
-    aspect-ratio: 16 / 9;
-    background: #000;  /* match the dark video frame edge */
+    aspect-ratio: 3 / 2;
+    background: #0c1020;
 }
 .pwr-card-img.wide img {
-    object-fit: contain;       /* preserve full preview, don't crop subtitles */
+    object-fit: cover;
     object-position: center;
 }
 .pwr-card:hover .pwr-card-img.wide img { transform: none; }  /* no zoom on previews */
@@ -2916,11 +2919,31 @@ elif st.session_state.step == 4:
         pid for pid in PRESETS.keys()
         if not (_previews_dir / f"preset_{pid}.png").exists()
     ]
+    # Also regen if existing previews are from the old smaller resolution
+    # (sub-1000px wide) — the new layout uses 4 cards/row at ~270px each so
+    # the source image needs to be ≥1080 to look crisp.
+    _target_width = 1080
+    if not _missing_previews:
+        try:
+            from PIL import Image as _PIL_check
+            for _pid in PRESETS.keys():
+                _p = _previews_dir / f"preset_{_pid}.png"
+                if _p.exists():
+                    with _PIL_check.open(_p) as _ci:
+                        if _ci.size[0] < _target_width:
+                            _missing_previews.append(_pid)
+        except Exception:
+            pass
+
     if _missing_previews:
         try:
             with st.spinner(f"Genero anteprima per {len(_missing_previews)} preset…"):
                 from PIL import Image as _PILImage
                 from src.editor import _render_subtitle_nicktrading as _render_sub
+                # 3:2 frame at high resolution. Subtitle fills ~92% width and
+                # sits centered vertically — this maximises the readable area
+                # at the eventual ~270×180 card size.
+                _bg_w, _bg_h = 1200, 800
                 for _pid in _missing_previews:
                     _settings = PRESETS[_pid]["settings"]
                     _sample = "Bitcoin esplode oltre" if _pid != "minimal" else "bitcoin esplode oltre"
@@ -2936,17 +2959,17 @@ elif st.session_state.step == 4:
                         highlight_style=_settings.get("highlight_style", "box"),
                         uppercase=_settings.get("uppercase", True),
                         emoji=_emoji,
-                        max_line_width=820,
+                        max_line_width=900,
                     )
                     _sub_img = _PILImage.fromarray(_arr)
                     _sw, _sh = _sub_img.size
-                    _bg_w, _bg_h = 720, 480
-                    _bg = _PILImage.new("RGB", (_bg_w, _bg_h), (12, 16, 32))
-                    _scale = min(0.9 * _bg_w / _sw, 0.7 * _bg_h / _sh) if _sw and _sh else 1
+                    # Scale subtitle to fill 92% width OR 75% height, whichever is smaller
+                    _scale = min(0.92 * _bg_w / _sw, 0.75 * _bg_h / _sh) if _sw and _sh else 1
                     _new_w, _new_h = int(_sw * _scale), int(_sh * _scale)
-                    _resized = _sub_img.resize((_new_w, _new_h))
+                    _resized = _sub_img.resize((_new_w, _new_h), _PILImage.LANCZOS)
+                    _bg = _PILImage.new("RGB", (_bg_w, _bg_h), (12, 16, 32))
                     _x = (_bg_w - _new_w) // 2
-                    _y = (_bg_h - _new_h) // 2 + 60
+                    _y = (_bg_h - _new_h) // 2  # truly centered
                     _bg.paste(_resized, (_x, _y), _resized.split()[3] if _resized.mode == "RGBA" else None)
                     _bg.save(_previews_dir / f"preset_{_pid}.png")
         except Exception as _e:
@@ -2967,48 +2990,54 @@ elif st.session_state.step == 4:
     )
 
     preset_ids = list(PRESETS.keys())
-    cols = st.columns(len(preset_ids))
+    # 4 cards per row instead of 1 row of all — with 8 presets the previous
+    # single-row layout squashed each card to ~130px wide, making the preview
+    # text unreadable. 4 columns gives ~270px per card on desktop.
+    COLS_PER_ROW = 4
 
-    for i, pid in enumerate(preset_ids):
-        preset = PRESETS[pid]
-        with cols[i]:
-            is_selected = (pid == current_preset) and not using_heygen
-            klass = "pwr-card" + (" selected" if is_selected else "")
-            active_pill = (
-                '<div class="pwr-active-pill">✓ ATTIVO</div>'
-                if is_selected else ""
-            )
-            preview_path = PROJECT_ROOT / "assets" / "templates" / f"preset_{pid}.png"
-            data_url = _img_data_url(preview_path) if preview_path.exists() else ""
-            preview_html = (
-                f'<img src="{data_url}" alt="{preset["name"]}">'
-                if data_url
-                else '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#52525b;">📝 Preview non disponibile</div>'
-            )
-            st.markdown(
-                f'<div class="{klass}">'
-                f'  <div class="pwr-card-img wide">{active_pill}{preview_html}</div>'
-                f'  <div class="pwr-card-name">{preset["name"]}</div>'
-                f'  <div class="pwr-card-meta">{preset["description"]}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-            if st.button(
-                "✓ Selezionato" if is_selected else "Seleziona stile",
-                key=f"preset_{pid}",
-                use_container_width=True,
-                disabled=is_selected,
-                type="primary" if is_selected else "secondary",
-            ):
-                new_settings = dict(preset["settings"])
-                new_settings["preset"] = pid
-                new_settings["position"] = settings["editor"]["subtitle"].get("position", "center")
-                new_settings["max_chars_per_line"] = settings["editor"]["subtitle"].get("max_chars_per_line", 25)
-                settings["editor"]["subtitle"] = new_settings
-                settings["heygen"]["subtitle_source"] = "custom"
-                settings["heygen"]["caption"] = False
-                save_settings(settings)
-                st.rerun()
+    for row_start in range(0, len(preset_ids), COLS_PER_ROW):
+        row_pids = preset_ids[row_start:row_start + COLS_PER_ROW]
+        row_cols = st.columns(COLS_PER_ROW)
+        for ci, pid in enumerate(row_pids):
+            preset = PRESETS[pid]
+            with row_cols[ci]:
+                is_selected = (pid == current_preset) and not using_heygen
+                klass = "pwr-card" + (" selected" if is_selected else "")
+                active_pill = (
+                    '<div class="pwr-active-pill">✓ ATTIVO</div>'
+                    if is_selected else ""
+                )
+                preview_path = PROJECT_ROOT / "assets" / "templates" / f"preset_{pid}.png"
+                data_url = _img_data_url(preview_path) if preview_path.exists() else ""
+                preview_html = (
+                    f'<img src="{data_url}" alt="{preset["name"]}">'
+                    if data_url
+                    else '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#52525b;">📝 Preview non disponibile</div>'
+                )
+                st.markdown(
+                    f'<div class="{klass}">'
+                    f'  <div class="pwr-card-img wide">{active_pill}{preview_html}</div>'
+                    f'  <div class="pwr-card-name">{preset["name"]}</div>'
+                    f'  <div class="pwr-card-meta">{preset["description"]}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button(
+                    "✓ Selezionato" if is_selected else "Seleziona stile",
+                    key=f"preset_{pid}",
+                    use_container_width=True,
+                    disabled=is_selected,
+                    type="primary" if is_selected else "secondary",
+                ):
+                    new_settings = dict(preset["settings"])
+                    new_settings["preset"] = pid
+                    new_settings["position"] = settings["editor"]["subtitle"].get("position", "center")
+                    new_settings["max_chars_per_line"] = settings["editor"]["subtitle"].get("max_chars_per_line", 25)
+                    settings["editor"]["subtitle"] = new_settings
+                    settings["heygen"]["subtitle_source"] = "custom"
+                    settings["heygen"]["caption"] = False
+                    save_settings(settings)
+                    st.rerun()
 
     st.divider()
 
