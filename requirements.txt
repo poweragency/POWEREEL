@@ -32,6 +32,8 @@ streamlit>=1.35
 fastapi>=0.110
 uvicorn[standard]>=0.27
 websockets>=12.0
+python-multipart>=0.0.9  # required by FastAPI for multipart/form-data uploads
+qrcode[pil]>=7.4         # QR code generation for "upload from phone" avatar flow
 
 # Utilities
 tenacity>=8.2

@@ -159,6 +159,69 @@ def update_user_keys(email: str, keys: dict) -> bool:
     return False
 
 
+def list_user_avatars(email: str) -> list[dict]:
+    """Return the user's custom HeyGen avatars (created via PowerEEL)."""
+    user = get_user(email)
+    if not user:
+        return []
+    return user.get("api_keys", {}).get("my_avatars", []) or []
+
+
+def add_user_avatar(email: str, avatar: dict) -> bool:
+    """Append a new custom avatar to the user's profile.
+
+    Avatar dict shape:
+      {
+        "avatar_id": "...",          # HeyGen avatar look id (used by /v2/video/generate)
+        "group_id": "...",           # HeyGen avatar group id (optional)
+        "name": "Mio avatar",
+        "status": "processing",      # processing | completed | failed
+        "preview_url": "...",        # optional thumbnail
+        "created_at": iso timestamp,
+      }
+    """
+    email = email.lower().strip()
+    db = _load_db()
+    for user in db.get("users", []):
+        if user["email"] == email:
+            keys = user.setdefault("api_keys", {})
+            avatars = keys.setdefault("my_avatars", [])
+            avatars.append(avatar)
+            _save_db(db)
+            return True
+    return False
+
+
+def update_user_avatar(email: str, avatar_id: str, patch: dict) -> bool:
+    """Patch fields of an existing custom avatar (e.g. status -> completed)."""
+    email = email.lower().strip()
+    db = _load_db()
+    for user in db.get("users", []):
+        if user["email"] == email:
+            avatars = user.get("api_keys", {}).get("my_avatars", []) or []
+            for av in avatars:
+                if av.get("avatar_id") == avatar_id:
+                    av.update(patch)
+                    _save_db(db)
+                    return True
+    return False
+
+
+def remove_user_avatar(email: str, avatar_id: str) -> bool:
+    """Remove a custom avatar from the user's profile (does not delete on HeyGen)."""
+    email = email.lower().strip()
+    db = _load_db()
+    for user in db.get("users", []):
+        if user["email"] == email:
+            avatars = user.get("api_keys", {}).get("my_avatars", []) or []
+            new_list = [a for a in avatars if a.get("avatar_id") != avatar_id]
+            if len(new_list) != len(avatars):
+                user["api_keys"]["my_avatars"] = new_list
+                _save_db(db)
+                return True
+    return False
+
+
 def change_password(email: str, new_password: str) -> bool:
     email = email.lower().strip()
     if len(new_password) < 6:

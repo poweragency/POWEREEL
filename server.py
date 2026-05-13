@@ -15,6 +15,7 @@ Streamlit runs as a subprocess on 127.0.0.1:8501.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -24,7 +25,7 @@ import time
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 import uvicorn
 import websockets
@@ -404,6 +405,271 @@ def _oauth_done_html(ok: bool, message: str, pages: list | None = None) -> Respo
     </html>
     """
     return Response(content=html, media_type="text/html")
+
+
+# ── Avatar mobile upload (QR phone flow) ──────────────────────────────────────
+# Customer's desktop creates a one-time token, renders a QR. Customer scans
+# from phone, lands on a mobile upload page (served below), uploads the MP4
+# via the form, and our handler stores the file at a deterministic path that
+# the desktop UI polls for.
+#
+# Cross-process coordination (FastAPI ↔ Streamlit subprocess) is filesystem-
+# based: tokens live as JSON files under DATA_DIR/avatar_tokens/, uploads
+# under DATA_DIR/avatar_uploads/. No shared memory required.
+
+_AVATAR_TOKEN_TTL = 1800  # 30 min
+_AVATAR_MAX_BYTES = 32 * 1024 * 1024  # HeyGen accepts max 32 MB
+
+
+def _avatar_data_dir() -> Path:
+    """Match users.DATA_DIR resolution so tokens persist across processes."""
+    env = os.getenv("DATA_DIR", "").strip()
+    return Path(env) if env else (PROJECT_ROOT / "config")
+
+
+def _avatar_token_path(token: str) -> Path:
+    return _avatar_data_dir() / "avatar_tokens" / f"{token}.json"
+
+
+def _avatar_upload_path(token: str) -> Path:
+    return _avatar_data_dir() / "avatar_uploads" / f"{token}.mp4"
+
+
+def _read_avatar_token(token: str) -> dict | None:
+    p = _avatar_token_path(token)
+    if not p.exists():
+        return None
+    try:
+        meta = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if time.time() - meta.get("created_at", 0) > _AVATAR_TOKEN_TTL:
+        try:
+            p.unlink()
+        except Exception:
+            pass
+        return None
+    return meta
+
+
+@app.get("/avatar/upload/{token}")
+async def avatar_upload_page(token: str):
+    """Mobile-friendly page the customer lands on after scanning the QR."""
+    import re as _re_token
+    if not _re_token.match(r'^[A-Za-z0-9_\-]{16,64}$', token):
+        return JSONResponse({"error": "invalid token"}, status_code=400)
+
+    meta = _read_avatar_token(token)
+    if not meta:
+        html = _avatar_phone_html(
+            ok=False,
+            title="Link scaduto",
+            body="Questo link è scaduto o non è valido. Torna su PowerEEL e genera un nuovo QR.",
+        )
+        return Response(content=html, media_type="text/html")
+
+    if _avatar_upload_path(token).exists():
+        html = _avatar_phone_html(
+            ok=True,
+            title="Video già caricato",
+            body="Hai già inviato il video da questo link. Torna sul tuo computer per continuare.",
+        )
+        return Response(content=html, media_type="text/html")
+
+    html = _avatar_phone_form_html(token)
+    return Response(content=html, media_type="text/html")
+
+
+@app.post("/avatar/upload/{token}")
+async def avatar_upload_receive(token: str, file: UploadFile = File(...)):
+    """Receive the consent video from the phone and persist it for desktop polling."""
+    import re as _re_token
+    if not _re_token.match(r'^[A-Za-z0-9_\-]{16,64}$', token):
+        return JSONResponse({"error": "invalid token"}, status_code=400)
+
+    meta = _read_avatar_token(token)
+    if not meta:
+        return JSONResponse({"error": "token scaduto o non valido"}, status_code=410)
+
+    out_path = _avatar_upload_path(token)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Stream to disk with a hard cap so a malicious phone can't fill the volume.
+    total = 0
+    try:
+        with open(out_path, "wb") as f:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _AVATAR_MAX_BYTES:
+                    f.close()
+                    out_path.unlink(missing_ok=True)
+                    return JSONResponse(
+                        {"error": f"file > {_AVATAR_MAX_BYTES // (1024*1024)} MB"},
+                        status_code=413,
+                    )
+                f.write(chunk)
+    except Exception as e:
+        out_path.unlink(missing_ok=True)
+        return JSONResponse({"error": f"upload fallito: {e}"}, status_code=500)
+
+    logger.info("Avatar upload da phone: token=%s size=%d bytes", token, total)
+    html = _avatar_phone_html(
+        ok=True,
+        title="Video ricevuto!",
+        body="Puoi chiudere questa pagina. Torna sul tuo computer: il training partirà tra pochi secondi.",
+    )
+    return Response(content=html, media_type="text/html")
+
+
+@app.get("/avatar/upload/{token}/status")
+async def avatar_upload_status(token: str):
+    """Polled by the desktop UI to know when the phone upload is done."""
+    import re as _re_token
+    if not _re_token.match(r'^[A-Za-z0-9_\-]{16,64}$', token):
+        return JSONResponse({"error": "invalid token"}, status_code=400)
+
+    meta = _read_avatar_token(token)
+    if not meta:
+        return JSONResponse({"received": False, "expired": True})
+
+    p = _avatar_upload_path(token)
+    if p.exists():
+        return JSONResponse({
+            "received": True,
+            "size_bytes": p.stat().st_size,
+            "path": str(p),
+        })
+    return JSONResponse({"received": False, "expired": False})
+
+
+def _avatar_phone_form_html(token: str) -> str:
+    """Mobile upload form — minimal styling, works on iOS Safari + Android Chrome."""
+    return f"""<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <title>PowerEEL · Carica il video del tuo avatar</title>
+  <style>
+    * {{ box-sizing: border-box; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            background: #0b0d1a; color: #fafafa; margin: 0; padding: 24px;
+            min-height: 100vh; }}
+    .box {{ max-width: 480px; margin: 0 auto;
+            background: linear-gradient(180deg,#1a1a2e,#141422);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 18px; padding: 26px 22px;
+            box-shadow: 0 24px 60px -16px rgba(0,0,0,.6); }}
+    h1 {{ margin: 0 0 8px; font-size: 1.4rem; font-weight: 800; letter-spacing: -.02em; }}
+    p {{ color: #a1a1aa; line-height: 1.55; margin: 0 0 16px; font-size: .96rem; }}
+    .tip {{ background: rgba(34,197,94,.08); border: 1px solid rgba(34,197,94,.25);
+            border-radius: 10px; padding: 10px 14px; color: #86efac;
+            font-size: .88rem; margin-bottom: 16px; }}
+    label {{ display: block; padding: 16px; border: 2px dashed rgba(255,255,255,.18);
+             border-radius: 12px; text-align: center; cursor: pointer;
+             color: #d4d4d8; font-weight: 600; margin-bottom: 14px; }}
+    input[type=file] {{ display: none; }}
+    .filename {{ margin-top: 8px; font-size: .82rem; color: #71717a; word-break: break-all; }}
+    button {{ width: 100%; background: linear-gradient(135deg,#ff2357,#e40014);
+              color: white; border: 0; padding: 14px;
+              border-radius: 12px; font-size: 1rem; font-weight: 700;
+              cursor: pointer; box-shadow: 0 12px 28px -8px rgba(255,35,87,.55); }}
+    button:disabled {{ opacity: .5; cursor: wait; }}
+    .progress {{ display: none; margin-top: 14px; height: 8px;
+                 background: rgba(255,255,255,.08); border-radius: 999px; overflow: hidden; }}
+    .bar {{ height: 100%; width: 0%;
+            background: linear-gradient(90deg,#ff2357,#e40014);
+            transition: width .25s ease; }}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Registra/Carica il video del tuo avatar</h1>
+    <p>Riprenditi parlando guardando in camera per circa <b>15-30 secondi</b>. Volto inquadrato, buona luce, sfondo neutro.</p>
+    <div class="tip">Sul telefono, tocca il pulsante e <b>scegli "Registra video"</b> oppure seleziona un video già esistente.</div>
+    <form id="f" method="post" enctype="multipart/form-data" action="/avatar/upload/{token}">
+      <label for="file" id="lbl">
+        <div>📹 Tocca qui per registrare/scegliere il video</div>
+        <div class="filename" id="fn"></div>
+      </label>
+      <input id="file" name="file" type="file" accept="video/*" capture="user" required>
+      <button id="btn" type="submit">Invia a PowerEEL →</button>
+      <div class="progress" id="prog"><div class="bar" id="bar"></div></div>
+    </form>
+  </div>
+  <script>
+    const f = document.getElementById('f');
+    const inp = document.getElementById('file');
+    const fn = document.getElementById('fn');
+    const btn = document.getElementById('btn');
+    const prog = document.getElementById('prog');
+    const bar = document.getElementById('bar');
+    inp.addEventListener('change', () => {{
+      if (inp.files[0]) fn.textContent = inp.files[0].name + ' (' +
+        (inp.files[0].size/1024/1024).toFixed(1) + ' MB)';
+    }});
+    f.addEventListener('submit', (e) => {{
+      e.preventDefault();
+      if (!inp.files[0]) return;
+      btn.disabled = true; btn.textContent = 'Invio in corso...';
+      prog.style.display = 'block';
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', f.action);
+      xhr.upload.onprogress = (ev) => {{
+        if (ev.lengthComputable) bar.style.width = (ev.loaded/ev.total*100) + '%';
+      }};
+      xhr.onload = () => {{
+        document.body.innerHTML = xhr.responseText;
+      }};
+      xhr.onerror = () => {{
+        btn.disabled = false; btn.textContent = 'Riprova';
+        alert('Upload fallito. Riprova.');
+      }};
+      const fd = new FormData();
+      fd.append('file', inp.files[0]);
+      xhr.send(fd);
+    }});
+  </script>
+</body>
+</html>
+"""
+
+
+def _avatar_phone_html(ok: bool, title: str, body: str) -> str:
+    """Generic status page (success / expired / error)."""
+    color = "#22c55e" if ok else "#ef4444"
+    icon = "✅" if ok else "⚠️"
+    return f"""<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PowerEEL · {title}</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            background: #0b0d1a; color: #fafafa; margin: 0; padding: 24px;
+            min-height: 100vh; display: flex; align-items: center; justify-content: center; }}
+    .box {{ max-width: 460px; background: linear-gradient(180deg,#1a1a2e,#141422);
+            border: 1px solid rgba(255,255,255,.08); border-radius: 18px;
+            padding: 30px 24px; text-align: center;
+            box-shadow: 0 0 0 3px {color}25, 0 24px 60px -16px rgba(0,0,0,.6); }}
+    .icon {{ font-size: 3rem; margin-bottom: 8px; }}
+    h1 {{ color: {color}; margin: 0 0 10px; font-size: 1.4rem; font-weight: 800; }}
+    p {{ color: #d4d4d8; line-height: 1.55; margin: 0; font-size: .96rem; }}
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="icon">{icon}</div>
+    <h1>{title}</h1>
+    <p>{body}</p>
+  </div>
+</body>
+</html>
+"""
 
 
 # ── Diagnostic publish endpoint ───────────────────────────────────────────────

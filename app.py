@@ -1094,6 +1094,15 @@ def _restore_session_from_cookie() -> bool:
     st.session_state.user_email = user["email"]
     st.session_state.is_admin = user.get("is_admin", False)
     _apply_user_api_keys(user)
+    # First-login UX (cookie restore path): users without API keys land
+    # directly on the API Keys page instead of a broken Step 1.
+    _keys = user.get("api_keys", {}) or {}
+    if "view" not in st.session_state:
+        st.session_state.view = (
+            "wizard"
+            if (_keys.get("heygen") or _keys.get("anthropic"))
+            else "api_keys"
+        )
     return True
 
 
@@ -1466,6 +1475,14 @@ def show_landing_and_login() -> bool:
                     st.session_state.user_email = user["email"]
                     st.session_state.is_admin = user["is_admin"]
                     _apply_user_api_keys(user)
+                    # First-login UX: if the user has not configured any API
+                    # keys yet, drop them straight onto the API Keys page so
+                    # they don't get stuck on a Step 1 that can't load avatars.
+                    _keys = user.get("api_keys", {}) or {}
+                    if not (_keys.get("heygen") or _keys.get("anthropic")):
+                        st.session_state.view = "api_keys"
+                    else:
+                        st.session_state.view = "wizard"
                     # Persist auth in a signed cookie so the user stays
                     # logged in across deploys / browser refresh / OAuth.
                     _write_auth_cookie(user["email"])
@@ -2009,6 +2026,10 @@ if st.session_state.view == "wizard":
         unsafe_allow_html=True,
     )
 
+    if st.sidebar.button("📹 Crea il tuo avatar", use_container_width=True):
+        st.session_state.view = "create_avatar"
+        st.rerun()
+
     if st.sidebar.button("🔑 Configura API Keys", use_container_width=True):
         st.session_state.view = "api_keys"
         st.rerun()
@@ -2246,6 +2267,421 @@ if st.session_state.view == "api_keys":
 
     st.divider()
     st.info("💡 Non sai come ottenere queste chiavi? Vai su **Guida Setup** dalla sidebar.")
+
+    st.stop()
+
+
+# ── CREA AVATAR PAGE ─────────────────────────────────────────────────────────
+# Customer-facing avatar creation flow. Wraps HeyGen v3 API so the customer
+# never leaves PowerEEL.
+#   1) Choose method: Upload MP4  ·  Phone QR
+#   2) Confirm consent + name
+#   3) PowerEEL uploads to HeyGen, starts digital_twin training
+#   4) Auto-poll status; when "completed" the avatar appears in Step 4
+
+if st.session_state.view == "create_avatar":
+    import secrets as _secrets
+    import time as _time
+    import json as _json
+    import qrcode as _qrcode
+    from io import BytesIO as _BytesIO
+    from datetime import datetime as _dt
+
+    from src import avatar_creator as _avatar_creator
+    from src.users import (
+        list_user_avatars as _list_user_avatars,
+        add_user_avatar as _add_user_avatar,
+        update_user_avatar as _update_user_avatar,
+        remove_user_avatar as _remove_user_avatar,
+    )
+
+    st.markdown(
+        '<h1 translate="no" lang="it">📹 Crea il tuo avatar</h1>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Registra/carica un breve video di te mentre parli guardando in camera. "
+        "PowerEEL crea un avatar AI che potrai riusare in tutti i tuoi reel."
+    )
+
+    user_email = st.session_state.user_email
+    api_key = os.getenv("HEYGEN_API_KEY", "")
+
+    if not api_key:
+        st.warning(
+            "⚠️ Non hai ancora configurato la tua HEYGEN_API_KEY. "
+            "Vai su **🔑 Configura API Keys** dalla sidebar."
+        )
+        st.stop()
+
+    # ── Existing custom avatars ──────────────────────────────────────────────
+    my_avatars = _list_user_avatars(user_email)
+
+    # Recovery button: pull the user's avatars from HeyGen and import/refresh
+    # local entries. Useful if a previous create succeeded on HeyGen but the
+    # local profile got the wrong id, or if avatars were created via the
+    # HeyGen UI directly.
+    with st.expander("🔄 Sincronizza con HeyGen (recupera avatar mancanti)"):
+        st.caption(
+            "Importa o aggiorna gli avatar dal tuo account HeyGen (utile se vedi "
+            "errori 'avatar_not_found' o se hai creato avatar direttamente su HeyGen)."
+        )
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            do_sync = st.button("🔄 Sync ora", use_container_width=True,
+                                key="sync_heygen_avatars", type="primary")
+        with c2:
+            show_debug = st.checkbox("Mostra debug response", key="sync_debug")
+        if do_sync:
+            try:
+                remote, raw = _avatar_creator.list_remote_avatars(api_key, return_raw=True)
+                if show_debug:
+                    st.json(raw)
+                # Index local entries by avatar_id for fast lookup
+                local_by_id = {a.get("avatar_id"): a for a in my_avatars}
+                # Index by name → first local entry for that group (for repair)
+                existing_by_name = {
+                    (a.get("name") or "").strip().lower(): a
+                    for a in my_avatars
+                }
+                added = updated = refreshed = 0
+                claimed_local_ids: set[str] = set()
+                for r in remote:
+                    # Case 1: same avatar_id already in local → REFRESH preview/status/look_name
+                    if r["avatar_id"] in local_by_id:
+                        local = local_by_id[r["avatar_id"]]
+                        patch = {}
+                        if r.get("preview_url") and r["preview_url"] != local.get("preview_url"):
+                            patch["preview_url"] = r["preview_url"]
+                        if r.get("status") and r["status"] != local.get("status"):
+                            patch["status"] = r["status"]
+                        if r.get("look_name") and r["look_name"] != local.get("look_name"):
+                            patch["look_name"] = r["look_name"]
+                        if r.get("group_id") and r["group_id"] != local.get("group_id"):
+                            patch["group_id"] = r["group_id"]
+                        if patch:
+                            _update_user_avatar(user_email, r["avatar_id"], patch)
+                            refreshed += 1
+                        continue
+                    # Case 2: same group name in local but different id → REPAIR (only once per group)
+                    name_key = (r["name"] or "").strip().lower()
+                    matching_local = existing_by_name.get(name_key)
+                    if matching_local and matching_local["avatar_id"] not in claimed_local_ids:
+                        _update_user_avatar(
+                            user_email, matching_local["avatar_id"], {
+                                "avatar_id": r["avatar_id"],
+                                "group_id": r["group_id"],
+                                "look_name": r.get("look_name"),
+                                "status": r["status"],
+                                "preview_url": r["preview_url"],
+                            },
+                        )
+                        claimed_local_ids.add(matching_local["avatar_id"])
+                        updated += 1
+                    else:
+                        # Case 3: brand new look → ADD
+                        _add_user_avatar(user_email, {
+                            "avatar_id": r["avatar_id"],
+                            "group_id": r["group_id"],
+                            "name": r["name"],
+                            "look_name": r.get("look_name"),
+                            "status": r["status"],
+                            "preview_url": r["preview_url"],
+                            "created_at": _dt.now().isoformat(),
+                        })
+                        added += 1
+                msg_parts = []
+                if added:
+                    msg_parts.append(f"+{added} nuovi")
+                if updated:
+                    msg_parts.append(f"{updated} corretti (id)")
+                if refreshed:
+                    msg_parts.append(f"{refreshed} aggiornati (preview/stato)")
+                if msg_parts:
+                    st.success("✅ Sync completato — " + ", ".join(msg_parts))
+                    _time.sleep(1.5)
+                    st.rerun()
+                else:
+                    st.info(
+                        "Nessun cambiamento — sei già allineato con HeyGen. "
+                        "Se mancano ancora le anteprime, gli avatar potrebbero non "
+                        "averle ancora generate (training in corso)."
+                    )
+            except _avatar_creator.AvatarCreatorError as e:
+                st.error(f"Errore: {e}")
+
+    if my_avatars:
+        st.markdown(
+            '<div class="pwr-section-label">🎭 I tuoi avatar</div>',
+            unsafe_allow_html=True,
+        )
+        cols = st.columns(min(len(my_avatars), 4))
+        for i, av in enumerate(my_avatars):
+            with cols[i % 4]:
+                status = av.get("status", "unknown")
+                badge_color = {
+                    "completed": "#22c55e",
+                    "processing": "#f59e0b",
+                    "pending_consent": "#f59e0b",
+                    "needs_verification": "#3b82f6",
+                    "failed": "#ef4444",
+                }.get(status, "#71717a")
+                badge_text = {
+                    "completed": "✓ pronto",
+                    "processing": "⏳ training...",
+                    "pending_consent": "⏳ in attesa",
+                    "needs_verification": "🔒 verifica su HeyGen",
+                    "failed": "✗ errore",
+                }.get(status, status)
+
+                preview = av.get("preview_url", "")
+                preview_html = (
+                    f'<img src="{preview}" alt="{av.get("name","")}" '
+                    f'style="width:100%;border-radius:10px;aspect-ratio:1/1;object-fit:cover;">'
+                    if preview else
+                    '<div style="width:100%;aspect-ratio:1/1;background:#1a1a2e;'
+                    'border-radius:10px;display:flex;align-items:center;'
+                    'justify-content:center;color:#52525b;font-size:2rem;">🎭</div>'
+                )
+                st.markdown(
+                    f'<div style="background:rgba(255,255,255,.03);'
+                    f'border:1px solid rgba(255,255,255,.08);border-radius:14px;'
+                    f'padding:12px;margin-bottom:8px;">'
+                    f'  {preview_html}'
+                    f'  <div style="margin-top:10px;font-weight:600;'
+                    f'color:#fafafa;font-size:.95rem;">{av.get("name","Avatar")}</div>'
+                    f'  <div style="margin-top:4px;display:inline-block;'
+                    f'padding:2px 8px;border-radius:999px;background:{badge_color}25;'
+                    f'color:{badge_color};font-size:.75rem;font-weight:700;">'
+                    f'{badge_text}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # Refresh status if not yet completed
+                if status in ("processing", "pending_consent"):
+                    if st.button("🔄 Aggiorna stato", key=f"refresh_{av['avatar_id']}",
+                                 use_container_width=True):
+                        try:
+                            new_status = _avatar_creator.get_status(av["avatar_id"], api_key)
+                            _update_user_avatar(user_email, av["avatar_id"], {
+                                "status": new_status["status"],
+                                "preview_url": new_status.get("preview_url") or av.get("preview_url", ""),
+                                "error": new_status.get("error", ""),
+                            })
+                            st.rerun()
+                        except _avatar_creator.AvatarCreatorError as e:
+                            st.error(f"Errore: {e}")
+
+                if status == "failed":
+                    err = av.get("error") or "training fallito"
+                    st.caption(f"❌ {err}")
+
+                if st.button("🗑️ Rimuovi dall'elenco", key=f"rm_{av['avatar_id']}",
+                             use_container_width=True):
+                    _remove_user_avatar(user_email, av["avatar_id"])
+                    st.rerun()
+
+        st.divider()
+
+    # ── Create new avatar ────────────────────────────────────────────────────
+    st.markdown(
+        '<div class="pwr-section-label">➕ Crea un nuovo avatar</div>',
+        unsafe_allow_html=True,
+    )
+
+    avatar_name = st.text_input(
+        "Nome dell'avatar",
+        value=st.session_state.get("new_avatar_name", "Mio avatar"),
+        key="new_avatar_name",
+        help="Solo per uso interno — ti serve a riconoscerlo nell'elenco",
+    )
+
+    consent_ok = st.checkbox(
+        "Confermo di essere io la persona ripresa nel video, "
+        "e autorizzo HeyGen e PowerEEL a creare un avatar AI dal mio volto.",
+        key="avatar_consent",
+    )
+
+    # Visible reason when the action button is disabled — helps the user fix it
+    _missing = []
+    if not (avatar_name or "").strip():
+        _missing.append("scrivi un **nome avatar**")
+    if not consent_ok:
+        _missing.append("spunta la **casella di consenso**")
+    if _missing:
+        st.warning("Per creare l'avatar: " + " e ".join(_missing) + ".")
+
+    st.markdown("""
+    **Come registrare un buon video** (consigli HeyGen):
+    - Durata: **15-30 secondi**, parla in modo naturale guardando in camera
+    - **Volto ben illuminato**, sfondo neutro, una sola persona inquadrata
+    - Frase consigliata: *"Io [tuo nome] autorizzo la creazione del mio avatar AI"*
+    - Formato: MP4, max 32 MB
+    """)
+
+    tab_upload, tab_phone = st.tabs(["📁 Carica file MP4", "📱 Registra dal telefono"])
+
+    # ── Tab 1: file upload ───────────────────────────────────────────────────
+    with tab_upload:
+        uploaded = st.file_uploader(
+            "Trascina qui un MP4 oppure clicca per scegliere",
+            type=["mp4", "mov", "webm"],
+            key="avatar_upload_file",
+        )
+        if uploaded is not None:
+            size_mb = uploaded.size / (1024 * 1024)
+            st.caption(f"File: **{uploaded.name}** ({size_mb:.1f} MB)")
+            if size_mb > 32:
+                st.error("File troppo grande: HeyGen accetta max 32 MB. "
+                         "Comprimi il video o registra una clip più breve.")
+            elif st.button("🚀 Crea avatar da questo file",
+                           type="primary", use_container_width=True,
+                           disabled=not (consent_ok and avatar_name.strip())):
+                if not consent_ok:
+                    st.error("Devi confermare il consenso prima di procedere")
+                else:
+                    user_dir = _users.get_user_output_dir(user_email) / "avatars"
+                    user_dir.mkdir(parents=True, exist_ok=True)
+                    raw_path = user_dir / f"raw_{int(_time.time())}.mp4"
+                    raw_path.write_bytes(uploaded.getvalue())
+
+                    with st.spinner("Caricamento su HeyGen + avvio training..."):
+                        try:
+                            result = _avatar_creator.upload_and_train(
+                                raw_path, avatar_name.strip(), api_key,
+                            )
+                            _add_user_avatar(user_email, {
+                                "avatar_id": result["avatar_id"],
+                                "group_id": result["group_id"],
+                                "name": avatar_name.strip(),
+                                "status": result["status"],
+                                "preview_url": result["preview_url"],
+                                "created_at": _dt.now().isoformat(),
+                            })
+                            st.success(
+                                "✅ Training partito! Riceverai l'avatar pronto in 15-30 minuti. "
+                                "Ricarica questa pagina o usa **Aggiorna stato** sopra."
+                            )
+                            _time.sleep(2)
+                            st.rerun()
+                        except _avatar_creator.AvatarCreatorError as e:
+                            st.error(f"Errore HeyGen: {e}")
+                        except Exception as e:
+                            st.error(f"Errore imprevisto: {e}")
+
+    # ── Tab 2: phone QR ──────────────────────────────────────────────────────
+    with tab_phone:
+        public_base = os.getenv("PUBLIC_BASE_URL", "").rstrip("/")
+        if not public_base:
+            st.warning(
+                "⚠️ PUBLIC_BASE_URL non è configurato — il flusso telefono "
+                "richiede un URL pubblico raggiungibile dal cellulare. "
+                "In locale puoi usare ngrok o testare via tab 'Carica file MP4'."
+            )
+
+        # Reuse a token across reruns until it's consumed or expires
+        token_key = "avatar_phone_token"
+        if token_key not in st.session_state:
+            st.session_state[token_key] = None
+
+        if st.session_state[token_key] is None:
+            if st.button("📱 Genera link/QR per il telefono", type="primary",
+                         use_container_width=True,
+                         disabled=not (consent_ok and avatar_name.strip())):
+                token = _secrets.token_urlsafe(20)
+                # Persist token metadata so the FastAPI endpoint can validate it
+                tokens_dir = _users.DATA_DIR / "avatar_tokens"
+                tokens_dir.mkdir(parents=True, exist_ok=True)
+                (tokens_dir / f"{token}.json").write_text(
+                    _json.dumps({
+                        "email": user_email,
+                        "name": avatar_name.strip(),
+                        "created_at": _time.time(),
+                    }),
+                    encoding="utf-8",
+                )
+                st.session_state[token_key] = token
+                st.rerun()
+        else:
+            token = st.session_state[token_key]
+            upload_url = f"{public_base}/avatar/upload/{token}" if public_base else f"/avatar/upload/{token}"
+
+            # Render QR code as PNG inline. Force the PIL image factory so the
+            # resulting object's .save() accepts format= (PyPNGImage does not).
+            from qrcode.image.pil import PilImage as _PilImage
+            qr_img = _qrcode.make(upload_url, image_factory=_PilImage)
+            buf = _BytesIO()
+            qr_img.save(buf, format="PNG")
+            buf.seek(0)
+
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                st.image(buf, caption="Scansiona col telefono", width=260)
+            with c2:
+                st.markdown(
+                    f"**1.** Apri la fotocamera del telefono\n\n"
+                    f"**2.** Inquadra il QR a sinistra\n\n"
+                    f"**3.** Tocca il link che appare\n\n"
+                    f"**4.** Registra/scegli il video e invia\n\n"
+                    f"---\n\n"
+                    f"In alternativa apri questo link sul telefono:"
+                )
+                st.code(upload_url, language=None)
+
+            # Poll the upload directory
+            upload_path = _users.DATA_DIR / "avatar_uploads" / f"{token}.mp4"
+
+            colA, colB = st.columns([1, 1])
+            with colA:
+                if st.button("🔄 Ho caricato dal telefono — verifica",
+                             use_container_width=True, type="primary"):
+                    st.rerun()
+            with colB:
+                if st.button("🗑️ Annulla / nuovo QR",
+                             use_container_width=True):
+                    try:
+                        (_users.DATA_DIR / "avatar_tokens" / f"{token}.json").unlink(missing_ok=True)
+                        upload_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    st.session_state[token_key] = None
+                    st.rerun()
+
+            if upload_path.exists():
+                size_mb = upload_path.stat().st_size / (1024 * 1024)
+                st.success(f"✅ Video ricevuto dal telefono ({size_mb:.1f} MB)")
+                if st.button("🚀 Avvia training avatar",
+                             type="primary", use_container_width=True):
+                    with st.spinner("Caricamento su HeyGen + avvio training..."):
+                        try:
+                            result = _avatar_creator.upload_and_train(
+                                upload_path, avatar_name.strip(), api_key,
+                            )
+                            _add_user_avatar(user_email, {
+                                "avatar_id": result["avatar_id"],
+                                "group_id": result["group_id"],
+                                "name": avatar_name.strip(),
+                                "status": result["status"],
+                                "preview_url": result["preview_url"],
+                                "created_at": _dt.now().isoformat(),
+                            })
+                            # Clean up the temp upload + token now that we're done
+                            try:
+                                upload_path.unlink(missing_ok=True)
+                                (_users.DATA_DIR / "avatar_tokens" / f"{token}.json").unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            st.session_state[token_key] = None
+                            st.success(
+                                "✅ Training partito! L'avatar sarà pronto in 15-30 minuti."
+                            )
+                            _time.sleep(2)
+                            st.rerun()
+                        except _avatar_creator.AvatarCreatorError as e:
+                            st.error(f"Errore HeyGen: {e}")
+            else:
+                st.info("⏳ In attesa del video dal telefono... clicca **Verifica** dopo l'upload.")
 
     st.stop()
 
@@ -2674,12 +3110,170 @@ if st.session_state.step == 1:
     )
 
     data = _heygen_data()
-    groups = data["groups"]
-    all_looks = data["looks"]
+    groups = list(data["groups"])
+    all_looks = dict(data["looks"])
     current_avatar = settings["heygen"]["avatar_id"]
 
+    # Inject the user's PowerEEL-created avatars at the top of the avatar
+    # list. Looks are grouped by their HeyGen avatar group (e.g. all 4 looks
+    # of "Mio avatar" appear under one card). Show all looks regardless of
+    # training status — completed ones are usable, the rest will be flagged
+    # visually but still rendered so the user knows they exist.
+    _my_av = _users.list_user_avatars(st.session_state.user_email)
+
+    # Auto-sync (per-group): if any local avatar has an empty preview_url,
+    # query HeyGen v2 directly using the group_id we already stored locally.
+    # This avoids the train_status filter which may exclude valid groups
+    # depending on HeyGen account state. Runs once per session.
+    _api_key_for_sync = os.getenv("HEYGEN_API_KEY", "")
+    if (
+        _my_av
+        and _api_key_for_sync
+        and not st.session_state.get("_step1_autosync_done")
+        and any(not (a.get("preview_url") or "").strip() for a in _my_av)
+    ):
+        try:
+            from src import avatar_creator as _avatar_creator_lazy
+            # Collect all unique candidate group ids from local entries.
+            # If group_id is missing, try the avatar_id (older entries may
+            # have stored the group_id under avatar_id by mistake).
+            candidate_gids: dict[str, list] = {}
+            for a in _my_av:
+                gid = a.get("group_id") or a.get("avatar_id")
+                if not gid:
+                    continue
+                candidate_gids.setdefault(gid, []).append(a)
+
+            seen_avatar_ids = {a.get("avatar_id") for a in _my_av}
+
+            for gid, local_entries in candidate_gids.items():
+                looks = _avatar_creator_lazy._list_avatars_in_group_v2(
+                    gid, _api_key_for_sync,
+                )
+                if not looks:
+                    continue
+
+                # Build look-id → look map for fast lookup
+                look_by_id = {lk["id"]: lk for lk in looks}
+
+                # 1) Update existing local entries that match a real look id
+                matched_local_entries: list[str] = []
+                for entry in local_entries:
+                    aid = entry.get("avatar_id")
+                    if aid in look_by_id:
+                        lk = look_by_id[aid]
+                        patch = {}
+                        if lk.get("image_url"):
+                            patch["preview_url"] = lk["image_url"]
+                        if lk.get("name") and lk["name"] != entry.get("look_name"):
+                            patch["look_name"] = lk["name"]
+                        if lk.get("status"):
+                            patch["status"] = lk["status"]
+                        if not entry.get("group_id"):
+                            patch["group_id"] = gid
+                        if patch:
+                            _users.update_user_avatar(
+                                st.session_state.user_email, aid, patch,
+                            )
+                        matched_local_entries.append(aid)
+
+                # 2) For local entries that DIDN'T match (avatar_id was probably
+                # the group_id by mistake), repair the first one with the first
+                # real look, then add the remaining looks as new entries
+                unmatched = [
+                    e for e in local_entries
+                    if e.get("avatar_id") not in matched_local_entries
+                ]
+                remaining_looks = [
+                    lk for lk in looks if lk["id"] not in seen_avatar_ids
+                ]
+
+                for entry in unmatched:
+                    if not remaining_looks:
+                        break
+                    lk = remaining_looks.pop(0)
+                    seen_avatar_ids.add(lk["id"])
+                    _users.update_user_avatar(
+                        st.session_state.user_email,
+                        entry["avatar_id"], {
+                            "avatar_id": lk["id"],
+                            "group_id": gid,
+                            "look_name": lk.get("name"),
+                            "status": lk.get("status", "completed"),
+                            "preview_url": lk.get("image_url", ""),
+                        },
+                    )
+
+                # 3) Any leftover looks → new entries (e.g. HeyGen generated
+                # additional looks since the last sync)
+                for lk in remaining_looks:
+                    seen_avatar_ids.add(lk["id"])
+                    # Use the local group's display name (first entry)
+                    gname = (local_entries[0].get("name") or "Avatar").strip()
+                    _users.add_user_avatar(
+                        st.session_state.user_email, {
+                            "avatar_id": lk["id"],
+                            "group_id": gid,
+                            "name": gname,
+                            "look_name": lk.get("name"),
+                            "status": lk.get("status", "completed"),
+                            "preview_url": lk.get("image_url", ""),
+                            "created_at": __import__("datetime").datetime.now().isoformat(),
+                        },
+                    )
+
+            # Re-read after all patches
+            _my_av = _users.list_user_avatars(st.session_state.user_email)
+        except Exception as _autosync_err:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "Auto-sync avatar previews failed: %s", _autosync_err
+            )
+        finally:
+            st.session_state._step1_autosync_done = True
+
+    if _my_av:
+        # Group by the avatar/group name. Order: preserve first-seen.
+        _user_groups: dict[str, list] = {}
+        _seen_order: list[str] = []
+        for a in _my_av:
+            gname = (a.get("name") or "Mio avatar").strip()
+            if gname not in _user_groups:
+                _user_groups[gname] = []
+                _seen_order.append(gname)
+            _user_groups[gname].append({
+                "look_id": a["avatar_id"],
+                "name": a.get("look_name") or a.get("name") or "Look",
+                "image_url": a.get("preview_url", ""),
+                "status": a.get("status", "completed"),
+            })
+
+        # Inject each user-owned group at the TOP of the groups list
+        injected_group_dicts = []
+        for gname in _seen_order:
+            all_looks[gname] = _user_groups[gname]
+            injected_group_dicts.append({
+                "id": f"_my_{gname}",
+                "name": gname,
+            })
+        groups = injected_group_dicts + groups
+
     if not groups:
-        st.error("Nessun avatar trovato. Verifica HEYGEN_API_KEY in config/.env")
+        _has_heygen = bool(os.getenv("HEYGEN_API_KEY", "").strip())
+        if not _has_heygen:
+            st.warning(
+                "⚠️ **Non hai ancora configurato la tua HEYGEN_API_KEY.** "
+                "Senza la chiave HeyGen non posso caricare gli avatar."
+            )
+            if st.button("🔑 Vai a Configura API Keys", type="primary",
+                         use_container_width=True, key="step1_goto_keys"):
+                st.session_state.view = "api_keys"
+                st.rerun()
+        else:
+            st.error(
+                "Nessun avatar trovato. Crea il tuo avatar dalla sidebar "
+                "(**📹 Crea il tuo avatar**) oppure verifica la HEYGEN_API_KEY."
+            )
         st.stop()
 
     # Determine which group contains the currently-active look
@@ -2722,11 +3316,18 @@ if st.session_state.step == 1:
                 if is_active else ""
             )
             looks_count = len(gl)
-            preview_html = (
-                f'<img src="{preview_img}" alt="{gname}">'
-                if preview_img
-                else '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#52525b;">🎭</div>'
-            )
+            if preview_img:
+                preview_html = f'<img src="{preview_img}" alt="{gname}">'
+            else:
+                # Pretty placeholder: centered group initials on a gradient
+                _initials = "".join(w[0] for w in gname.split()[:2]).upper() or "AV"
+                preview_html = (
+                    f'<div style="width:100%;height:100%;display:flex;'
+                    f'align-items:center;justify-content:center;'
+                    f'background:linear-gradient(135deg,#1f1f3a 0%,#2d1b4e 100%);'
+                    f'color:#a1a1aa;font-weight:800;font-size:2.2rem;'
+                    f'letter-spacing:.05em;">{_initials}</div>'
+                )
             st.markdown(
                 f'<div class="{klass}">'
                 f'  <div class="pwr-card-img">{active_pill}{preview_html}</div>'
@@ -2765,23 +3366,51 @@ if st.session_state.step == 1:
         for i, look in enumerate(looks):
             with cols[i % 4]:
                 is_selected = look["look_id"] == current_avatar
+                look_status = look.get("status", "completed")
+                is_training = look_status in ("processing", "pending_consent", "needs_verification")
                 klass = "pwr-card" + (" selected" if is_selected else "")
                 active_pill = (
                     '<div class="pwr-active-pill">✓ ATTIVO</div>'
                     if is_selected else ""
                 )
+
+                if look.get("image_url"):
+                    look_img_html = f'<img src="{look["image_url"]}" alt="{look["name"]}">'
+                else:
+                    _li = "".join(w[0] for w in look["name"].split()[:2]).upper() or "LK"
+                    _training_badge = (
+                        '<div style="font-size:.65rem;font-weight:600;color:#f59e0b;'
+                        'margin-top:6px;letter-spacing:.1em;">⏳ TRAINING</div>'
+                        if is_training else ""
+                    )
+                    look_img_html = (
+                        f'<div style="width:100%;height:100%;display:flex;'
+                        f'flex-direction:column;align-items:center;justify-content:center;'
+                        f'background:linear-gradient(135deg,#1f1f3a 0%,#2d1b4e 100%);'
+                        f'color:#a1a1aa;font-weight:800;font-size:1.8rem;">'
+                        f'<div>{_li}</div>'
+                        f'{_training_badge}'
+                        f'</div>'
+                    )
+
                 st.markdown(
                     f'<div class="{klass}">'
-                    f'  <div class="pwr-card-img">{active_pill}<img src="{look["image_url"]}" alt="{look["name"]}"></div>'
+                    f'  <div class="pwr-card-img">{active_pill}{look_img_html}</div>'
                     f'  <div class="pwr-card-name">{look["name"]}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
+
+                btn_label = (
+                    "✓ Selezionato" if is_selected
+                    else ("⏳ In training (non selezionabile)" if is_training
+                          else "Seleziona look")
+                )
                 if st.button(
-                    "✓ Selezionato" if is_selected else "Seleziona look",
+                    btn_label,
                     key=f"look_{look['look_id']}",
                     use_container_width=True,
-                    disabled=is_selected,
+                    disabled=is_selected or is_training,
                     type="primary" if is_selected else "secondary",
                 ):
                     settings["heygen"]["avatar_id"] = look["look_id"]
