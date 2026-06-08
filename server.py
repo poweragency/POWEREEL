@@ -144,6 +144,43 @@ async def landing_preview():
     )
 
 
+# ── Legal pages ──────────────────────────────────────────────────────────────
+# Privacy / Terms / Cookie serviti come HTML statici da FastAPI. Devono essere
+# definiti PRIMA del proxy catch-all verso Streamlit, altrimenti verrebbero
+# instradati a Streamlit. Linkati dal footer della landing.
+
+_LEGAL_PAGES = {
+    "privacy": PROJECT_ROOT / "static" / "privacy.html",
+    "terms": PROJECT_ROOT / "static" / "terms.html",
+    "cookie": PROJECT_ROOT / "static" / "cookie.html",
+}
+
+
+def _serve_legal(name: str) -> Response:
+    path = _LEGAL_PAGES[name]
+    if not path.exists():
+        return JSONResponse({"error": f"{name}.html not found"}, status_code=404)
+    return Response(
+        content=path.read_text(encoding="utf-8"),
+        media_type="text/html; charset=utf-8",
+    )
+
+
+@app.get("/privacy")
+async def legal_privacy():
+    return _serve_legal("privacy")
+
+
+@app.get("/terms")
+async def legal_terms():
+    return _serve_legal("terms")
+
+
+@app.get("/cookie")
+async def legal_cookie():
+    return _serve_legal("cookie")
+
+
 # ── Public video serve (for IG Reels video_url upload method) ────────────────
 # Meta's resumable upload endpoint (rupload.facebook.com) returns
 # ProcessingFailedError 500 for some account/payload combos, even when the
